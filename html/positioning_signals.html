@@ -1,0 +1,184 @@
+
+<!DOCTYPE html
+  PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html><head>
+      <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+   <!--
+This HTML was auto-generated from MATLAB code.
+To make changes, update the MATLAB code and republish this document.
+      --><title>positioning_signals</title><meta name="generator" content="MATLAB 8.0"><link rel="schema.DC" href="http://purl.org/dc/elements/1.1/"><meta name="DC.date" content="2016-11-19"><meta name="DC.source" content="positioning_signals.m"><style type="text/css">
+html,body,div,span,applet,object,iframe,h1,h2,h3,h4,h5,h6,p,blockquote,pre,a,abbr,acronym,address,big,cite,code,del,dfn,em,font,img,ins,kbd,q,s,samp,small,strike,strong,sub,sup,tt,var,b,u,i,center,dl,dt,dd,ol,ul,li,fieldset,form,label,legend,table,caption,tbody,tfoot,thead,tr,th,td{margin:0;padding:0;border:0;outline:0;font-size:100%;vertical-align:baseline;background:transparent}body{line-height:1}ol,ul{list-style:none}blockquote,q{quotes:none}blockquote:before,blockquote:after,q:before,q:after{content:'';content:none}:focus{outine:0}ins{text-decoration:none}del{text-decoration:line-through}table{border-collapse:collapse;border-spacing:0}
+
+html { min-height:100%; margin-bottom:1px; }
+html body { height:100%; margin:0px; font-family:Arial, Helvetica, sans-serif; font-size:10px; color:#000; line-height:140%; background:#fff none; overflow-y:scroll; }
+html body td { vertical-align:top; text-align:left; }
+
+h1 { padding:0px; margin:0px 0px 25px; font-family:Arial, Helvetica, sans-serif; font-size:1.5em; color:#d55000; line-height:100%; font-weight:normal; }
+h2 { padding:0px; margin:0px 0px 8px; font-family:Arial, Helvetica, sans-serif; font-size:1.2em; color:#000; font-weight:bold; line-height:140%; border-bottom:1px solid #d6d4d4; display:block; }
+h3 { padding:0px; margin:0px 0px 5px; font-family:Arial, Helvetica, sans-serif; font-size:1.1em; color:#000; font-weight:bold; line-height:140%; }
+
+a { color:#005fce; text-decoration:none; }
+a:hover { color:#005fce; text-decoration:underline; }
+a:visited { color:#004aa0; text-decoration:none; }
+
+p { padding:0px; margin:0px 0px 20px; }
+img { padding:0px; margin:0px 0px 20px; border:none; }
+p img, pre img, tt img, li img { margin-bottom:0px; } 
+
+ul { padding:0px; margin:0px 0px 20px 23px; list-style:square; }
+ul li { padding:0px; margin:0px 0px 7px 0px; }
+ul li ul { padding:5px 0px 0px; margin:0px 0px 7px 23px; }
+ul li ol li { list-style:decimal; }
+ol { padding:0px; margin:0px 0px 20px 0px; list-style:decimal; }
+ol li { padding:0px; margin:0px 0px 7px 23px; list-style-type:decimal; }
+ol li ol { padding:5px 0px 0px; margin:0px 0px 7px 0px; }
+ol li ol li { list-style-type:lower-alpha; }
+ol li ul { padding-top:7px; }
+ol li ul li { list-style:square; }
+
+.content { font-size:1.2em; line-height:140%; padding: 20px; }
+
+pre, tt, code { font-size:12px; }
+pre { margin:0px 0px 20px; }
+pre.error { color:red; }
+pre.codeinput { padding:10px; border:1px solid #d3d3d3; background:#f7f7f7; }
+pre.codeoutput { padding:10px 11px; margin:0px 0px 20px; color:#4c4c4c; }
+
+@media print { pre.codeinput, pre.codeoutput { word-wrap:break-word; width:100%; } }
+
+span.keyword { color:#0000FF }
+span.comment { color:#228B22 }
+span.string { color:#A020F0 }
+span.untermstring { color:#B20000 }
+span.syscmd { color:#B28C00 }
+
+.footer { width:auto; padding:10px 0px; margin:25px 0px 0px; border-top:1px dotted #878787; font-size:0.8em; line-height:140%; font-style:italic; color:#878787; text-align:left; float:none; }
+.footer p { margin:0px; }
+.footer a { color:#878787; }
+.footer a:hover { color:#878787; text-decoration:underline; }
+.footer a:visited { color:#878787; }
+
+table th { padding:7px 5px; text-align:left; vertical-align:middle; border: 1px solid #d6d4d4; font-weight:bold; }
+table td { padding:7px 5px; text-align:left; vertical-align:top; border:1px solid #d6d4d4; }
+
+
+
+
+
+  </style></head><body><div class="content"><h2>Contents</h2><div><ul><li><a href="#1">Creating noisy signal and looking for part of it</a></li><li><a href="#2">Signal corellation, finding sample shift</a></li></ul></div><h2>Creating noisy signal and looking for part of it<a name="1"></a></h2><p>Experiment to see how find a part of singal inside another signal</p><pre class="codeinput">close <span class="string">all</span>;
+clear <span class="string">all</span>;
+
+M = 4;
+
+sampletime = 50e-6;
+f = 1.23e3;
+t = [0:sampletime:37*sampletime];
+sineWave = 2.5*sin(2*pi*f.*t);
+
+sampletimeB = 50e-6;
+fB = 1.2*f;
+tB = [0:sampletimeB:37*sampletimeB];
+sineWaveB = 2.5*sin(2*pi*f.*tB);
+
+sampletime2 = 50e-6;
+f2 = 1.1*f;<span class="comment">%3.73e3;</span>
+t2 = [0:sampletime2:37*sampletime2];
+sineWave2 = 2.5*sin(2*pi*f2.*t2);
+
+<span class="comment">% figure</span>
+<span class="comment">% plot(sineWave)</span>
+
+sig1 = randsrc(1,373, [0:M-1]);
+<span class="comment">%sig2 = sig1(121:180);</span>
+
+sig1(223:223+length(sineWave)-1) = sineWave;
+sig1(73:73+length(sineWaveB)-1) = sineWaveB;
+sig2 = sineWave2;
+
+figure;
+hold <span class="string">on</span>;
+stem(sig1, <span class="string">'-x'</span>);
+stem(sig2, <span class="string">'r-x'</span>);
+title(<span class="string">'Original signals'</span>);
+hold <span class="string">off</span>;
+</pre><img vspace="5" hspace="5" src="positioning_signals_01.png" alt=""> <h2>Signal corellation, finding sample shift<a name="2"></a></h2><pre class="codeinput">figure;
+[sigCorr, lag] = xcorr(sig2,sig1);
+plot(lag, sigCorr, <span class="string">'k'</span>);
+title(<span class="string">'Signals correlation'</span>);
+
+<span class="comment">% adding or removeing start samples</span>
+shiftSig2 = ceil(length(lag)/2 - find(max(sigCorr) == sigCorr))
+sig2 = [zeros(1, abs(shiftSig2)) sig2];
+
+figure;
+hold <span class="string">on</span>;
+stem(sig1, <span class="string">'-x'</span>);
+stem(sig2, <span class="string">'r-x'</span>);
+title(<span class="string">'Shifted signal'</span>)
+hold <span class="string">off</span>;
+</pre><pre class="codeoutput">
+shiftSig2 =
+
+   224
+
+</pre><img vspace="5" hspace="5" src="positioning_signals_02.png" alt=""> <img vspace="5" hspace="5" src="positioning_signals_03.png" alt=""> <p class="footer"><br><a href="http://www.mathworks.com/products/matlab/">Published with MATLAB&reg; R2012b</a><br></p></div><!--
+##### SOURCE BEGIN #####
+%% Creating noisy signal and looking for part of it
+% Experiment to see how find a part of singal inside another signal
+
+close all;
+clear all;
+
+M = 4;
+
+sampletime = 50e-6;
+f = 1.23e3;
+t = [0:sampletime:37*sampletime];
+sineWave = 2.5*sin(2*pi*f.*t);
+
+sampletimeB = 50e-6;
+fB = 1.2*f;
+tB = [0:sampletimeB:37*sampletimeB];
+sineWaveB = 2.5*sin(2*pi*f.*tB);
+
+sampletime2 = 50e-6;
+f2 = 1.1*f;%3.73e3;
+t2 = [0:sampletime2:37*sampletime2];
+sineWave2 = 2.5*sin(2*pi*f2.*t2);
+
+% figure
+% plot(sineWave)
+
+sig1 = randsrc(1,373, [0:M-1]);
+%sig2 = sig1(121:180);
+
+sig1(223:223+length(sineWave)-1) = sineWave; 
+sig1(73:73+length(sineWaveB)-1) = sineWaveB;
+sig2 = sineWave2;
+
+figure;
+hold on;
+stem(sig1, '-x');
+stem(sig2, 'r-x');
+title('Original signals');
+hold off;
+
+%% Signal corellation, finding sample shift 
+figure;
+[sigCorr, lag] = xcorr(sig2,sig1);
+plot(lag, sigCorr, 'k');
+title('Signals correlation');
+
+% adding or removeing start samples
+shiftSig2 = ceil(length(lag)/2 - find(max(sigCorr) == sigCorr))
+sig2 = [zeros(1, abs(shiftSig2)) sig2];
+
+figure;
+hold on;
+stem(sig1, '-x');
+stem(sig2, 'r-x');
+title('Shifted signal')
+hold off;
+
+##### SOURCE END #####
+--></body></html>
