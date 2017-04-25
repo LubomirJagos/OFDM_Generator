@@ -22,7 +22,7 @@ function varargout = main(varargin)
 
 % Edit the above text to modify the response to help main
 
-% Last Modified by GUIDE v2.5 25-Apr-2017 01:23:01
+% Last Modified by GUIDE v2.5 26-Apr-2017 00:38:13
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -66,6 +66,8 @@ handles.ofdm.dataInputMethod = 'randsrc';
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+%26.4.2017
+handles.ofdm.headData = 0;
 
 % Update handles structure
 guidata(hObject, handles);
@@ -155,7 +157,7 @@ numCarriers = str2double(get(handles.numOfCarriersInput, 'string'))
 numSymbols = str2double(get(handles.numOfSymbolsInput, 'string'))
 
 cpLen = str2double(get(handles.intervalLengthInput, 'string'))
-oversampleFactor = str2double(get(handles.oversamplingInput, 'string')) - 1.0;
+oversampleFactor = str2double(get(handles.oversamplingInput, 'string'));
 fc = str2double(get(handles.carrierFreqInput, 'string'))*1e3
                                                              
 %
@@ -179,7 +181,6 @@ numDataPoints = numCarriers * numSymbols * numBitsInGroup;
 %
 %   Zdroj vstupnych dat
 %
-
 if (strcmp(handles.ofdm.dataInputMethod,'file'))
     data_source = dlmread(handles.ofdm.file);
 elseif (strcmp(handles.ofdm.dataInputMethod,'randsrc'))
@@ -199,10 +200,31 @@ end
 %handles.data.seqData = data_source;
 
 %
+%   Nastavenie pilotnych tonov.
+%
+pilotTonesPositions = eval(get(handles.pilotTonesPositions, 'string'));
+pilotTonesAmplitudes = eval(get(handles.pilotTonesAmplitudes, 'string'));
+if (length(pilotTonesPositions) > 0)
+    usePilots = 1;
+else
+    usePilots = 0;
+end
+
+%
+%   Head data, reading as binary from file.
+%
+if (handles.ofdm.headData == 1)
+    f = fopen(handles.ofdm.headFile,'r')
+    headData = abs(fread(f,'bit1'));
+    fclose(f);
+    numHeadData = length(headData)
+    % headData
+end
+
+%
 %   Vytvorenie modulatoru
 %       handles.hModulator
 %
-
 clear modulated_data;
 if (strcmp(modType, 'QPSK'))
     handles.hModulator =  comm.QPSKModulator('BitInput',true,'SymbolMapping','Binary');
@@ -213,8 +235,7 @@ elseif (strcmp(modType, '16QAM'))
 end
 
 %  Vypocet pociatku cyklickeho prefixu
-cpStart = numCarriers-cpLen; 
-cpEnd = numCarriers;
+cpStart = (numCarriers-cpLen)*oversampleFactor
 
 %   Nastavenie parametrov podla GUI.
 
@@ -242,12 +263,12 @@ end
 % % % % % %   'InterpolationFactor', handles.usrp.interp);
 % % % % % % hMod = comm.DPSKModulator('BitInput',true);
 
-handles.stopGeneration
+handles.cyclicGeneration
 
 nfor = str2double(get(handles.editTxCycleCount, 'string'))      %defaultne 100krat prebehne tx
 benchmark = zeros(1,nfor);         %meranie rychlosti
-stopGeneration = 0;
-while (stopGeneration == 0)
+cyclicGeneration = 1;
+while (cyclicGeneration == 1)
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     %   Jadro, OFDM modulator
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -262,25 +283,61 @@ while (stopGeneration == 0)
         %
         %   hodnota vstupnych vzoriek pre USRP je napatie
         %
-        data_source = randi([0 1], length(data_source), 1);    
-        modulated_data = signalAmplitude * step(handles.hModulator, data_source);    
-        data_matrix = reshape(modulated_data, numCarriers, numSymbols);
-
-        %ifft_data = ifft(data_matrix,numCarriers);
-        ifft_data = ifft(    fftshift( ...
-                [data_matrix(1:end/2,:); ...
-                zeros(oversampleFactor*numCarriers, numSymbols); ...
-                data_matrix(end/2+1:end,:)], ...
-            oversampleFactor*numCarriers)) * oversampleFactor;
-
+        if (handles.ofdm.headData == 1)
+            data_source = randi([0 1], numCarriers, numSymbols);    
+            data_source = vertcat(repmat(headData,1,numSymbols), data_source);
+            data_source = reshape(data_source, (numCarriers+numHeadData)*numSymbols, 1);                
+            modulated_data = signalAmplitude * step(handles.hModulator, data_source);
+            % have to divide M, because binary data get compressed by
+            % modulation
+            data_matrix = reshape(modulated_data, (numCarriers+numHeadData)/log2(M), numSymbols);        
+        else
+            data_source = randi([0 1], length(data_source), 1);    
+            modulated_data = signalAmplitude * step(handles.hModulator, data_source);
+            data_matrix = reshape(modulated_data, numCarriers, numSymbols);        
+        end
+        
+        %
+        % Pilot tones           ZLE, SKONTROLOVAT CI SU VYPOZICIOVANE!
+        %
+        if (usePilots)
+            for k = 1:length(pilotTonesPositions)
+                    data_matrix = vertcat( ...
+                        data_matrix(1:pilotTonesPositions(k)-1+k-1,:), ...
+                        pilotTonesAmplitudes(k)*ones(1,numSymbols), ...
+                        data_matrix(pilotTonesPositions(k)+k-1:end,:) ...
+                    );
+            end
+        end
+        
+        %
+        % Upsampling, in the end data are MULTIPLIED TO CONSERVE ENERGY
+        %
+        if (oversampleFactor ~= 1)
+            ifft_data = ifft( ...
+                    [data_matrix(1:end/2,:); ...
+                    zeros((oversampleFactor-1)*numCarriers, numSymbols); ...
+                    data_matrix(end/2+1:end,:)], ...
+                    oversampleFactor*numCarriers) * oversampleFactor;
+        else
+            ifft_data = ifft(data_matrix,numCarriers);
+        end
+                
+        %
+        % Guard interval
+        %
         if ( insertGuardInterval == 1)
-            %POZOR ZLE, LEN SA NABALUJE
-            ifft_data = vertcat(zeros(cpLen, numSymbols), ifft_data);   %%%POZOR GUARD INTERVAL PRILEPI NULY, NESPRAVNE!
+            ifft_data = vertcat( ...
+                zeros(cpLen/2*oversampleFactor, numSymbols), ...
+                ifft_data, ...
+                zeros(cpLen/2*oversampleFactor, numSymbols));
         elseif (get(handles.intervalCyclicPrefixRadio, 'Value') == 1)
             ifft_data = vertcat(ifft_data(cpStart+1:end,:), ifft_data);
         else
             %%%%NOTHING%%%%%
         end
+    
+        %Serialization
         ofdm_signal = reshape(ifft_data, numel(ifft_data), 1);
 
         %
@@ -305,7 +362,7 @@ while (stopGeneration == 0)
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     
     pause(0.2);
-    stopGeneration = get(handles.stopGeneration,'value');
+    cyclicGeneration = get(handles.cyclicGeneration,'value');
 
     signalAmplitude = str2double(get(handles.editSignalAmplitude, 'string'));
     awgnLevel = str2double(get(handles.awgnLevel, 'string'));
@@ -321,6 +378,10 @@ while (stopGeneration == 0)
         useChannelModel = 3;    
     end
     
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    %   Signal in time plot
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
     axes(handles.ofdmWaveAxes);
     plot(zeros(1,numCarriers));
     title('OFDM signal');
@@ -328,44 +389,34 @@ while (stopGeneration == 0)
     ylabel('A[V]');
     plot(linspace(0,handles.lw410.fs,length(ofdm_signal)), real(ofdm_signal));
     hold on; plot(linspace(0,handles.lw410.fs,length(ofdm_signal)), imag(ofdm_signal),'r'); hold off;
-
-    % PLOT - OFDM signal spectrum, SIGNAL IS OVERSAMPLED FOR PLOTTING!
-    %           SIGNAL IS OVERSAMPLED FOR PLOTTING!
-    %           SIGNAL IS OVERSAMPLED FOR PLOTTING!
-    %           SIGNAL IS OVERSAMPLED FOR PLOTTING!
-    %           SIGNAL IS OVERSAMPLED FOR PLOTTING!
-        plot(linspace(0,handles.lw410.fs,length(ofdm_signal)), real(ofdm_signal));
-        title('OFDM signal in time domain');
-        hold on; plot(linspace(0,handles.lw410.fs,length(ofdm_signal)), imag(ofdm_signal),'r'); hold off;
-        grid on;
-        xlabel('t[s]'); ylabel('A[V]');
+    
+    plot(linspace(0,handles.lw410.fs,length(ofdm_signal)), real(ofdm_signal));
+    title('OFDM signal in time domain');
+    hold on; plot(linspace(0,handles.lw410.fs,length(ofdm_signal)), imag(ofdm_signal),'r'); hold off;
+    grid on;
+    xlabel('t[s]'); ylabel('A[V]');
 
     disp('Energia OFDM signalu (dBm)');
     10*log10(sum(abs(ofdm_signal).^2))
 
-    %RESAMPLE pre zobrazenie
-    %ofdm_signal = resample(ofdm_signal,oversampleFactor, 1);
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    % Signal after channel
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
     sigSpec = 20*log10(abs(fft(ofdm_signal, 2048))./2048);
-
-    axes(handles.ofdmWaveAxes3);
     minX = -handles.lw410.fs/2;               %VYPOCET FREKVENCNEJ OSI PRE ZOBRAZENIE!
                                                 %SKONTROLOVAT!
     maxX = -minX;
     xAxis = linspace(minX, maxX, 2048);
-    plot(xAxis, fftshift(sigSpec));
-    ylim([-100 -40]);
-    grid on;
-    title('OFDM magnitude spectrum'); xlabel('f[Hz]'); ylabel('A[dBV]');
 
-    % Vykreslenie signalu po prechode kanalom.
-        axes(handles.ofdmWaveAxes4);
-        sigSpecNoisy = 20*log10(abs(fft(ofdm_signal_noisy, 2048))./2048);
-        plot(xAxis, fftshift(sigSpecNoisy));
-        ylim([-100 -40]);
-        hold on;
-        plot(xAxis,fftshift(sigSpec), '--r')
-        hold off;
+    axes(handles.ofdmWaveAxes4);
+    sigSpecNoisy = 20*log10(abs(fft(ofdm_signal_noisy, 2048))./2048);
+    plot(xAxis, fftshift(sigSpecNoisy));
+    ylim([-100 -40]);
+    xlim([-fs/2 fs/2]);
+    hold on;
+    plot(xAxis,fftshift(sigSpec), '--r')
+    hold off;
     if (useChannelModel == 1)
         title('Signal after AWGN channel'); xlabel('f[kHz]'); ylabel('A[dBm]');
     elseif (useChannelModel == 2)
@@ -374,13 +425,13 @@ while (stopGeneration == 0)
         axes(handles.ofdmWaveAxes4);
         plot([]);
     end
-        grid on;    
+    grid on;    
 
     % NEZABUDNUT ZE VYPOCET ENERGIE SIGNALU A ZASUMENEHO SIGNALU SA
-    % ROBI Z PRESEMPLOVANEHO SIGNALU!
+    % ROBI Z PRESEMPLOVANEHO SIGNALU! <-- overit mozno je to dobre
 
-        ofdm_signal_energy_noisy = 10*log10(sum(abs(ofdm_signal_noisy).^2));
-        ofdm_signal_energy = 10*log10(sum(abs(ofdm_signal).^2));
+    ofdm_signal_energy_noisy = 10*log10(sum(abs(ofdm_signal_noisy).^2));
+    ofdm_signal_energy = 10*log10(sum(abs(ofdm_signal).^2));
     if (useChannelModel == 0)       % idealny kanal, vypis sily signalu
         set(handles.statusText, 'String', ...
             horzcat(    ...
@@ -438,7 +489,7 @@ guidata(hObject, handles);
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 % --- Executes on selection change in gpibAddrPopup.
-function stopGeneration_Callback(hObject, eventdata, handles)
+function cyclicGeneration_Callback(hObject, eventdata, handles)
 
 % --- Executes on selection change in gpibAddrPopup.
 function gpibAddrPopup_Callback(hObject, eventdata, handles)
@@ -588,7 +639,6 @@ elseif (get(handles.dataInputFileRadio, 'Value') == 1)
 end
 
 disp(horzcat('Data input method changed to ', handles.ofdm.dataInputMethod));
-
 guidata(hObject, handles);
 
 % --- Executes on button press in butExportOFDMData.
@@ -818,16 +868,6 @@ h = figure('Tag','time_zoom','Name','OFDM signal','Position',[scrsz(3)/2-500 scr
 newaxes = copyobj(handles.ofdmWaveAxes, h);
 set(newaxes,'Units','normalized','ActivePositionProperty','position','Position',[0.1 0.1 0.85 0.85]);
 
-% --- Executes on button press in showOfdmWaveAxes3But.
-function showOfdmWaveAxes3But_Callback(hObject, eventdata, handles)
-% hObject    handle to showOfdmWaveAxes3But (see GCBO)
-% eventdata  reserved - to be defined in a future version of MATLAB
-% handles    structure with handles and user data (see GUIDATA)
-scrsz = get(0,'ScreenSize');
-h = figure('Tag','time_zoom','Name','OFDM magnitude spectrum','Position',[scrsz(3)/2-500 scrsz(4)/2-250 1000 500]);
-newaxes = copyobj(handles.ofdmWaveAxes3, h);
-set(newaxes,'Units','normalized','ActivePositionProperty','position','Position',[0.1 0.1 0.85 0.85]);
-
 % --- Executes on button press in showOfdmWaveAxes4But.
 function showOfdmWaveAxes4But_Callback(hObject, eventdata, handles)
 % hObject    handle to showOfdmWaveAxes4But (see GCBO)
@@ -1005,18 +1045,18 @@ end
 
 
 
-function edit20_Callback(hObject, eventdata, handles)
-% hObject    handle to edit20 (see GCBO)
+function pilotTonesAmplitudes_Callback(hObject, eventdata, handles)
+% hObject    handle to pilotTonesAmplitudes (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 
-% Hints: get(hObject,'String') returns contents of edit20 as text
-%        str2double(get(hObject,'String')) returns contents of edit20 as a double
+% Hints: get(hObject,'String') returns contents of pilotTonesAmplitudes as text
+%        str2double(get(hObject,'String')) returns contents of pilotTonesAmplitudes as a double
 
 
 % --- Executes during object creation, after setting all properties.
-function edit20_CreateFcn(hObject, eventdata, handles)
-% hObject    handle to edit20 (see GCBO)
+function pilotTonesAmplitudes_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to pilotTonesAmplitudes (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    empty - handles not created until after all CreateFcns called
 
@@ -1032,7 +1072,7 @@ function saveCurrentSettings_Callback(hObject, eventdata, handles)
 % hObject    handle to saveCurrentSettings (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
-
+dlmwrite('OFDMGeneratorSettings.txt', handles.cyclicGeneration);
 
 % --- Executes on button press in pushbutton18.
 function pushbutton18_Callback(hObject, eventdata, handles)
@@ -1216,3 +1256,34 @@ function usrpContinuous_Callback(hObject, eventdata, handles)
 % handles    structure with handles and user data (see GUIDATA)
 
 % Hint: get(hObject,'Value') returns toggle state of usrpContinuous
+
+
+% --- Executes on key press with focus on dataInputFileRadio and none of its controls.
+function dataInputFileRadio_KeyPressFcn(hObject, eventdata, handles)
+% hObject    handle to dataInputFileRadio (see GCBO)
+% eventdata  structure with the following fields (see MATLAB.UI.CONTROL.UICONTROL)
+%	Key: name of the key that was pressed, in lower case
+%	Character: character interpretation of the key(s) that was pressed
+%	Modifier: name(s) of the modifier key(s) (i.e., control, shift) pressed
+% handles    structure with handles and user data (see GUIDATA)
+
+
+% --------------------------------------------------------------------
+function dataInputGroup_ButtonDownFcn(hObject, eventdata, handles)
+% hObject    handle to dataInputGroup (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% --- Executes when selected object is changed in headData.
+function headData_SelectionChangedFcn(hObject, eventdata, handles)
+% hObject    handle to the selected object in headData 
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+if (get(handles.noHeadDataRadio, 'Value') == 1)
+    handles.ofdm.headData = 0;
+elseif (get(handles.headDataRadio, 'Value') == 1)
+    handles.ofdm.headData = 1;
+    [fileName,path] = uigetfile('','Select file with head data');
+    handles.ofdm.headFile = horzcat(path, fileName);
+end
+guidata(hObject, handles);
