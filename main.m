@@ -22,7 +22,7 @@ function varargout = main(varargin)
 
 % Edit the above text to modify the response to help main
 
-% Last Modified by GUIDE v2.5 24-Apr-2017 02:08:51
+% Last Modified by GUIDE v2.5 25-Apr-2017 01:23:01
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -158,8 +158,6 @@ cpLen = str2double(get(handles.intervalLengthInput, 'string'))
 oversampleFactor = str2double(get(handles.oversamplingInput, 'string')) - 1.0;
 fc = str2double(get(handles.carrierFreqInput, 'string'))*1e3
                                                              
-awgnLevel = str2double(get(handles.awgnLevel, 'string'));
-
 %
 %   Typ modulacie
 %
@@ -222,6 +220,7 @@ cpEnd = numCarriers;
 
 insertGuardInterval = get(handles.intervalGuardIntervalRadio, 'Value');
 
+awgnLevel = str2double(get(handles.awgnLevel, 'string'));
 if (get(handles.noChannelRadio, 'Value') == 1)
     useChannelModel = 0;
 elseif (get(handles.awgnRadio, 'Value') == 1)
@@ -233,7 +232,6 @@ elseif (get(handles.rayleighRadio, 'Value') == 1)
 elseif (get(handles.ricianRadio, 'Value') == 1)
     useChannelModel = 3;    
 end
-    
 
 % USRP inicializacia
 
@@ -244,125 +242,148 @@ end
 % % % % % %   'InterpolationFactor', handles.usrp.interp);
 % % % % % % hMod = comm.DPSKModulator('BitInput',true);
 
-% prednastavenie pre vykreslovanie nech si to alokuje nejaku tu pamat
-% dopredu
-axes(handles.ofdmWaveAxes);
-plot(zeros(1,numCarriers));
-title('OFDM signal');
-xlabel('sample[-]');
-ylabel('A[V]');
+handles.stopGeneration
 
 nfor = str2double(get(handles.editTxCycleCount, 'string'))      %defaultne 100krat prebehne tx
 benchmark = zeros(1,nfor);         %meranie rychlosti
-for cycleCnt = 0:1:nfor
+stopGeneration = 0;
+while (stopGeneration == 0)
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    %   Jadro, OFDM modulator
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+        
+    for cycleCnt = 0:1:nfor
+        disp(horzcat('generate samples, step ',num2str(cycleCnt)));
+        tic;
 
-    %pokusne
-%     awgnLevel = str2double(get(handles.awgnLevel, 'string'));
+        %%%%%%
+        % OFDM modulator
+        %   data_source <--- VSTUPNE DATA
+        %
+        %   hodnota vstupnych vzoriek pre USRP je napatie
+        %
+        data_source = randi([0 1], length(data_source), 1);    
+        modulated_data = signalAmplitude * step(handles.hModulator, data_source);    
+        data_matrix = reshape(modulated_data, numCarriers, numSymbols);
 
-    disp(horzcat('generate samples, step ',num2str(cycleCnt)));
-    tic;
+        %ifft_data = ifft(data_matrix,numCarriers);
+        ifft_data = ifft(    fftshift( ...
+                [data_matrix(1:end/2,:); ...
+                zeros(oversampleFactor*numCarriers, numSymbols); ...
+                data_matrix(end/2+1:end,:)], ...
+            oversampleFactor*numCarriers)) * oversampleFactor;
 
-    %%%%%%
-    % OFDM modulator
-    %   data_source <--- VSTUPNE DATA
-    %
-    %   hodnota vstupnych vzoriek pre USRP je napatie
-    %
-    data_source = randi([0 1], length(data_source), 1);    
-    modulated_data = signalAmplitude * step(handles.hModulator, data_source);    
-    data_matrix = reshape(modulated_data, numCarriers, numSymbols);
-    
-    %vlozena rucna modifikacia vyslanych dat do ifft()
-%     for i = 1:4:64
-%         data_matrix(i,1) = 10;
-%     end
-    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-    
-%     ifft_data = ifft(data_matrix,numCarriers);
-    ifft_data = ifft(    fftshift( ...
-            [data_matrix(1:end/2,:); ...
-            zeros(oversampleFactor*numCarriers, numSymbols); ...
-            data_matrix(end/2+1:end,:)], ...
-        oversampleFactor*numCarriers)) ./ oversampleFactor;
-    
-    if ( insertGuardInterval == 1)
-        %POZOR ZLE, LEN SA NABALUJE
-        ifft_data = vertcat(zeros(cpLen, numSymbols), ifft_data);   %%%POZOR GUARD INTERVAL PRILEPI NULY, NESPRAVNE!
-    elseif (get(handles.intervalCyclicPrefixRadio, 'Value') == 1)
-        ifft_data = vertcat(ifft_data(cpStart+1:end,:), ifft_data);
-    else
-        %%%%NOTHING%%%%%
+        if ( insertGuardInterval == 1)
+            %POZOR ZLE, LEN SA NABALUJE
+            ifft_data = vertcat(zeros(cpLen, numSymbols), ifft_data);   %%%POZOR GUARD INTERVAL PRILEPI NULY, NESPRAVNE!
+        elseif (get(handles.intervalCyclicPrefixRadio, 'Value') == 1)
+            ifft_data = vertcat(ifft_data(cpStart+1:end,:), ifft_data);
+        else
+            %%%%NOTHING%%%%%
+        end
+        ofdm_signal = reshape(ifft_data, numel(ifft_data), 1);
+
+        %
+        %   USRP Tx
+        %
+        if (useChannelModel == 1)
+            ofdm_signal_noisy = awgn(ofdm_signal, awgnLevel, 20*log10(sum(abs(ofdm_signal))));
+        elseif (useChannelModel == 2)
+            ofdm_signal_noisy = filter(channelModel, ofdm_signal);
+        elseif (useChannelModel == 3)
+    %         ofdm_signal_noisy = filter(channelModel, ofdm_signal);
+        else                                  %useChannel == 0, default, no noise
+                                              %no change of signal, ideal case
+              ofdm_signal_noisy = ofdm_signal;
+        end
+    % % % % % %     step(Tx, ofdm_signal_noisy);
+        benchmark(cycleCnt+1) = toc;       %meranie casu vypoctu
     end
-    ofdm_signal = reshape(ifft_data, numel(ifft_data), 1);
     
-    %
-    %   USRP Tx
-    %
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    %   Interaktivna cast
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    
+    pause(0.2);
+    stopGeneration = get(handles.stopGeneration,'value');
+
+    signalAmplitude = str2double(get(handles.editSignalAmplitude, 'string'));
+    awgnLevel = str2double(get(handles.awgnLevel, 'string'));
+    if (get(handles.noChannelRadio, 'Value') == 1)
+        useChannelModel = 0;
+    elseif (get(handles.awgnRadio, 'Value') == 1)
+        useChannelModel = 1;
+    elseif (get(handles.rayleighRadio, 'Value') == 1)
+        maxDoplerShift = str2double(get(handles.doplerShiftIn, 'string'));
+        useChannelModel = 2;
+        channelModel = rayleighchan(1/fs, maxDoplerShift);
+    elseif (get(handles.ricianRadio, 'Value') == 1)
+        useChannelModel = 3;    
+    end
+    
+    axes(handles.ofdmWaveAxes);
+    plot(zeros(1,numCarriers));
+    title('OFDM signal');
+    xlabel('sample[-]');
+    ylabel('A[V]');
+    plot(linspace(0,handles.lw410.fs,length(ofdm_signal)), real(ofdm_signal));
+    hold on; plot(linspace(0,handles.lw410.fs,length(ofdm_signal)), imag(ofdm_signal),'r'); hold off;
+
+    % PLOT - OFDM signal spectrum, SIGNAL IS OVERSAMPLED FOR PLOTTING!
+    %           SIGNAL IS OVERSAMPLED FOR PLOTTING!
+    %           SIGNAL IS OVERSAMPLED FOR PLOTTING!
+    %           SIGNAL IS OVERSAMPLED FOR PLOTTING!
+    %           SIGNAL IS OVERSAMPLED FOR PLOTTING!
+        plot(linspace(0,handles.lw410.fs,length(ofdm_signal)), real(ofdm_signal));
+        title('OFDM signal in time domain');
+        hold on; plot(linspace(0,handles.lw410.fs,length(ofdm_signal)), imag(ofdm_signal),'r'); hold off;
+        grid on;
+        xlabel('t[s]'); ylabel('A[V]');
+
+    disp('Energia OFDM signalu (dBm)');
+    10*log10(sum(abs(ofdm_signal).^2))
+
+    %RESAMPLE pre zobrazenie
+    %ofdm_signal = resample(ofdm_signal,oversampleFactor, 1);
+
+    sigSpec = 20*log10(abs(fft(ofdm_signal, 2048))./2048);
+
+    axes(handles.ofdmWaveAxes3);
+    minX = -handles.lw410.fs/2;               %VYPOCET FREKVENCNEJ OSI PRE ZOBRAZENIE!
+                                                %SKONTROLOVAT!
+    maxX = -minX;
+    xAxis = linspace(minX, maxX, 2048);
+    plot(xAxis, fftshift(sigSpec));
+    ylim([-100 -40]);
+    grid on;
+    title('OFDM magnitude spectrum'); xlabel('f[Hz]'); ylabel('A[dBV]');
+
+    % Vykreslenie signalu po prechode kanalom.
+        axes(handles.ofdmWaveAxes4);
+        sigSpecNoisy = 20*log10(abs(fft(ofdm_signal_noisy, 2048))./2048);
+        plot(xAxis, fftshift(sigSpecNoisy));
+        ylim([-100 -40]);
+        hold on;
+        plot(xAxis,fftshift(sigSpec), '--r')
+        hold off;
     if (useChannelModel == 1)
-        ofdm_signal_noisy = awgn(ofdm_signal, awgnLevel, 20*log10(sum(abs(ofdm_signal))));
+        title('Signal after AWGN channel'); xlabel('f[kHz]'); ylabel('A[dBm]');
     elseif (useChannelModel == 2)
-        ofdm_signal_noisy = filter(channelModel, ofdm_signal);
-    elseif (useChannelModel == 3)
-%         ofdm_signal_noisy = filter(channelModel, ofdm_signal);
-    else                                  %useChannel == 0, default, no noise
-                                          %no change of signal, ideal case
-          ofdm_signal_noisy = ofdm_signal;
+        title('Signal after rayleigh channel'); xlabel('f[Hz]'); ylabel('A[dBm]');
+    else
+        axes(handles.ofdmWaveAxes4);
+        plot([]);
     end
-% % % % % %     step(Tx, ofdm_signal_noisy);
-    benchmark(cycleCnt+1) = toc;       %meranie casu vypoctu
+        grid on;    
 
-%     pause(0.01);   %cakanie v sekundach
-%     plot(linspace(0,handles.lw410.fs,length(ofdm_signal)), real(ofdm_signal));
-%     hold on; plot(linspace(0,handles.lw410.fs,length(ofdm_signal)), imag(ofdm_signal),'r'); hold off;
-end
+end     %koniec modulovania
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%       KONIEC GENEROVANIA
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 dlmwrite('benchmark.mat',benchmark,';');    %zapis do suboru
 handles.benchmark = benchmark;
 % plot(dlmread('benchmark.mat',';'))        %vykreslenie
-
-% PLOT - OFDM signal spectrum, SIGNAL IS OVERSAMPLED FOR PLOTTING!
-%           SIGNAL IS OVERSAMPLED FOR PLOTTING!
-%           SIGNAL IS OVERSAMPLED FOR PLOTTING!
-%           SIGNAL IS OVERSAMPLED FOR PLOTTING!
-%           SIGNAL IS OVERSAMPLED FOR PLOTTING!
-    plot(linspace(0,handles.lw410.fs,length(ofdm_signal)), real(ofdm_signal));
-    title('OFDM signal in time domain');
-    hold on; plot(linspace(0,handles.lw410.fs,length(ofdm_signal)), imag(ofdm_signal),'r'); hold off;
-    grid on;
-    xlabel('t[s]'); ylabel('A[V]');
-
-disp('Energia OFDM signalu (dBm)');
-10*log10(sum(abs(ofdm_signal).^2))
-
-%RESAMPLE pre zobrazenie
-%ofdm_signal = resample(ofdm_signal,oversampleFactor, 1);
-
-sigSpec = 20*log10(abs(fft(ofdm_signal, 2048))./2048);
-
-axes(handles.ofdmWaveAxes3);
-minX = -handles.lw410.fs/2;               %VYPOCET FREKVENCNEJ OSI PRE ZOBRAZENIE!
-                                            %SKONTROLOVAT!
-maxX = -minX;
-xAxis = linspace(minX, maxX, 2048);
-plot(xAxis, fftshift(sigSpec));
-grid on;
-title('OFDM magnitude spectrum'); xlabel('f[kHz]'); ylabel('A[dBV]');
-
-% Vykreslenie signalu po prechode kanalom.
-    axes(handles.ofdmWaveAxes4);
-    sigSpecNoisy = 20*log10(abs(fft(ofdm_signal_noisy, 2048))./2048);
-    plot(xAxis, fftshift(sigSpecNoisy));
-    hold on;
-    plot(xAxis,fftshift(sigSpec), '--r')
-    hold off;
-if (useChannelModel == 1)
-    title('Signal after AWGN channel'); xlabel('f[kHz]'); ylabel('A[dBm]');
-elseif (useChannelModel == 2)
-    title('Signal after rayleigh channel'); xlabel('f[kHz]'); ylabel('A[dBm]');
-else
-    axes(handles.ofdmWaveAxes4);
-    plot([]);
-end
-    grid on;
 
 % 
 % % PLOT - OFDM Phase spectrum
@@ -416,6 +437,8 @@ guidata(hObject, handles);
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+% --- Executes on selection change in gpibAddrPopup.
+function stopGeneration_Callback(hObject, eventdata, handles)
 
 % --- Executes on selection change in gpibAddrPopup.
 function gpibAddrPopup_Callback(hObject, eventdata, handles)
@@ -1184,3 +1207,12 @@ function doplerShiftIn_CreateFcn(hObject, eventdata, handles)
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
     set(hObject,'BackgroundColor','white');
 end
+
+
+% --- Executes on button press in usrpContinuous.
+function usrpContinuous_Callback(hObject, eventdata, handles)
+% hObject    handle to usrpContinuous (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hint: get(hObject,'Value') returns toggle state of usrpContinuous
