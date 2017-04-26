@@ -22,7 +22,7 @@ function varargout = main(varargin)
 
 % Edit the above text to modify the response to help main
 
-% Last Modified by GUIDE v2.5 26-Apr-2017 23:24:05
+% Last Modified by GUIDE v2.5 26-Apr-2017 00:38:13
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -285,8 +285,11 @@ while (cyclicGeneration == 1)
         disp(horzcat('generate samples, step ',num2str(cycleCnt)));
         tic;
 
+        %%%%%%
+        % OFDM modulator
+        %   data_source <--- VSTUPNE DATA
         %
-        %   Data source, generating data
+        %   hodnota vstupnych vzoriek pre USRP je napatie
         %
         if (dataSourceType == 0)
             data_source = randi([0 1], (numCarriers-numHeadData-numPilots)*log2(M), numSymbols);    
@@ -299,9 +302,6 @@ while (cyclicGeneration == 1)
             data_source = reshape(data_source, (numCarriers-numHeadData-numPilots)*log2(M), numSymbols);
         end
         
-        'head Data Info'
-        size(data_source)
-        
         %
         %   Head data insertion
         %
@@ -313,22 +313,16 @@ while (cyclicGeneration == 1)
         data_matrix = reshape(modulated_data, (numCarriers-numPilots), numSymbols);        
         
         %
-        % PILOTS INSERTION
-        %
-        % Carriers order - index:
+        % Pilot tones - index:
         %   1       =  DC
-        %   2       =  1st       carrier
+        %   2       =  1st carrier
+        %       .
         %           .
-        %           .
-        %   N/2     =  fs/2      carrier
-        %   N/2 + 1 = -fs/2 + df carrier
-        %           .
-        %           .
-        %   N       =  fs        carrier
-        %
-        %   Pilots are inserted between carriers to right positions.
-        %   Carriers around them are shifted.
-        %
+        %   N/2     =  fs/2
+        %   N/2 + 1 = -fs/2
+        %       .
+        %       .
+        %   N       =  fs
         if (usePilots)
             data_matrix_aux = zeros(numCarriers,numSymbols);
             j = 1;
@@ -357,7 +351,6 @@ while (cyclicGeneration == 1)
         else
             ifft_data = ifft(data_matrix,numCarriers);
         end
-        
         %
         % Guard interval
         %
@@ -398,15 +391,11 @@ while (cyclicGeneration == 1)
         if (deviceType == 1)
             step(Tx, ofdm_signal_noisy);
         end
-        
-        %
-        %   Benchmark
-        %
         benchmark(cycleCnt+1) = toc;       %meranie casu vypoctu
     end
     
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-    %   Interactive part
+    %   Interaktivna cast
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     
     pause(0.2);
@@ -1339,13 +1328,3 @@ elseif (get(handles.headDataRadio, 'Value') == 1)
     handles.ofdm.headFile = horzcat(path, fileName);
 end
 guidata(hObject, handles);
-
-
-% --- Executes on button press in writeHeadAndDataBut.
-function writeHeadAndDataBut_Callback(hObject, eventdata, handles)
-% hObject    handle to writeHeadAndDataBut (see GCBO)
-% eventdata  reserved - to be defined in a future version of MATLAB
-% handles    structure with handles and user data (see GUIDATA)
-disp('WriteBinaryFile start.');
-WriteBinrayFile(4);
-disp('WriteBinary file end.');
