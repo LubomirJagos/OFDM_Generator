@@ -22,7 +22,7 @@ function varargout = main(varargin)
 
 % Edit the above text to modify the response to help main
 
-% Last Modified by GUIDE v2.5 26-Apr-2017 23:24:05
+% Last Modified by GUIDE v2.5 27-Apr-2017 00:31:27
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -180,6 +180,8 @@ else
     M = 0
 end
 
+handles.modM = M;  %setting for GUI
+
 %
 %   Nastavenie pilotnych tonov.
 %
@@ -202,11 +204,30 @@ if (handles.ofdm.headData == 1)
     numHeadData = length(headData)/log2(M)
     % headData
     handles.ofdm.headDataIn.String = num2str(numHeadData);  %update GUI values
+    
+    %
+    %   Head data clipping.
+    %
+    if (numHeadData > numCarriers)
+        numHeadDataOld = numHeadData;
+        headData = headData(1:numCarriers/2,1);
+        numHeadData = length(headData)/log2(M)
+%        set(handles.statusText, 'String', ...
+disp(...
+            horzcat(    ...
+                'Clipping head data from ', ...
+                num2str(numHeadDataOld*8),'bits to ', ...
+                num2str(numHeadData),'bits' ...
+            ));
+    end
 end
 
 %
 %   Source data
 %   Here is just justification of type, generation is inside loop.
+%       0 = randsrc
+%       1 = user defined
+%       2 = file
 %
 dataSourceFile = 0;
 if (strcmp(handles.ofdm.dataInputMethod,'randsrc'))
@@ -276,6 +297,7 @@ end
 nfor = str2double(get(handles.editTxCycleCount, 'string'))      %defaultne 100krat prebehne tx
 benchmark = zeros(1,nfor);         %meranie rychlosti
 cyclicGeneration = 1;
+dataLen = (numCarriers-numHeadData-numPilots)*numSymbols*log2(M);
 while (cyclicGeneration == 1)
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     %   Jadro, OFDM modulator
@@ -287,20 +309,24 @@ while (cyclicGeneration == 1)
 
         %
         %   Data source, generating data
+        %       0 = randi
+        %       1 = user defined array
+        %       2 = file
         %
         if (dataSourceType == 0)
             data_source = randi([0 1], (numCarriers-numHeadData-numPilots)*log2(M), numSymbols);    
         elseif (dataSourceType == 2)
-            dataLen = (numCarriers-numHeadData-numPilots)*numSymbols*log2(M);
-            data_source = fread(dataSourceFile, dataLen, 'uint8');    
+            data_source = fread(dataSourceFile, dataLen, 'ubit1');
+            if (feof(dataSourceFile))
+                fseek(dataSourceFile,0,'bof');
+            end
+            
+            %check if enough bits was read
             if (length(data_source) < dataLen)
                 data_source = [data_source; zeros(dataLen-length(data_source),1)];
             end
             data_source = reshape(data_source, (numCarriers-numHeadData-numPilots)*log2(M), numSymbols);
         end
-        
-        'head Data Info'
-        size(data_source)
         
         %
         %   Head data insertion
@@ -688,6 +714,7 @@ elseif (get(handles.dataInputFileRadio, 'Value') == 1)
     [fileName,path] = uigetfile('','Select file with samples');
     handles.ofdm.file = horzcat(path, fileName);
     set(handles.seqInput, 'string', horzcat(path, fileName));
+    set(handles.statusText, 'string', horzcat('Data input from file ', path, fileName));
 end
 
 disp(horzcat('Data input method changed to ', handles.ofdm.dataInputMethod));
@@ -1124,14 +1151,27 @@ function saveCurrentSettings_Callback(hObject, eventdata, handles)
 % hObject    handle to saveCurrentSettings (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
-dlmwrite('OFDMGeneratorSettings.txt', handles.cyclicGeneration);
+%
+%   ToDo:
+%       - generating file names by date
+%
+paramsToSave = [ ...
+    str2num(get(handles.numOfCarriersInput, 'String')) ...
+    str2num(get(handles.editSignalAmplitude, 'String')) ...
+];
+dlmwrite(horzcat('OFDMSettings ',datestr(now,'dd-mmm-yyyy HH-MM-SS'),'.txt'), paramsToSave,'delimiter',';');
 
 % --- Executes on button press in pushbutton18.
 function pushbutton18_Callback(hObject, eventdata, handles)
 % hObject    handle to pushbutton18 (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
-
+settingsFile = dir('OFDMSettings*');
+paramsToRead = [];
+paramsToRead = dlmread(settingsFile(end).name,';');
+set(handles.numOfCarriersInput, 'String', paramsToRead(1));
+set(handles.editSignalAmplitude, 'String', paramsToRead(2));
+guidata(hObject, handles);
 
 
 function subcarriersPos_Callback(hObject, eventdata, handles)
@@ -1337,6 +1377,7 @@ elseif (get(handles.headDataRadio, 'Value') == 1)
     handles.ofdm.headData = 1;
     [fileName,path] = uigetfile('','Select file with head data');
     handles.ofdm.headFile = horzcat(path, fileName);
+    set(handles.statusText, 'String', horzcat('Header data read from file ', handles.ofdm.headFile));
 end
 guidata(hObject, handles);
 
@@ -1347,5 +1388,6 @@ function writeHeadAndDataBut_Callback(hObject, eventdata, handles)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 disp('WriteBinaryFile start.');
-WriteBinrayFile(4);
+WriteBinaryFile(handles.modM,64,20e3);
+set(handles.statusText, 'String', 'Head and data write as binary files OFDMHead.bin and OFDMData.bin');
 disp('WriteBinary file end.');
