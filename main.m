@@ -175,16 +175,38 @@ elseif (strcmp(modType, '16QAM'))
 else
     M = 0
 end
-numBitsInGroup = log10(M)/log10(2)
-numDataPoints = numCarriers * numSymbols * numBitsInGroup;
+
+%
+%   Nastavenie pilotnych tonov.
+%
+pilotTonesPositions = eval(get(handles.pilotTonesPositions, 'string'));
+pilotTonesAmplitudes = eval(get(handles.pilotTonesAmplitudes, 'string'));
+numPilots = length(pilotTonesPositions);
+usePilots = 0;
+if (numPilots > 0)
+    usePilots = 1;
+end
+
+%
+%   Head data, reading as binary from file.
+%
+numHeadData = 0;
+if (handles.ofdm.headData == 1)
+    f = fopen(handles.ofdm.headFile,'r')
+    headData = abs(fread(f,'bit1'));
+    fclose(f);
+    numHeadData = length(headData)/log2(M)
+    % headData
+end
 
 %
 %   Zdroj vstupnych dat
 %
 if (strcmp(handles.ofdm.dataInputMethod,'file'))
     data_source = dlmread(handles.ofdm.file);
+    %need to do reshape
 elseif (strcmp(handles.ofdm.dataInputMethod,'randsrc'))
-    data_source = randsrc(1, numDataPoints, [0 1]);
+    data_source = randi([0 1], (numCarriers-numHeadData-numPilots)*log2(M), numSymbols);    
 elseif (strcmp(handles.ofdm.dataInputMethod,'user'))
     data_source = eval(get(handles.seqInput, 'string'));
     data_source_aux = [];
@@ -196,30 +218,9 @@ elseif (strcmp(handles.ofdm.dataInputMethod,'user'))
         end
     end
     data_source = data_source_aux;
+    %need to do reshape
 end
 %handles.data.seqData = data_source;
-
-%
-%   Nastavenie pilotnych tonov.
-%
-pilotTonesPositions = eval(get(handles.pilotTonesPositions, 'string'));
-pilotTonesAmplitudes = eval(get(handles.pilotTonesAmplitudes, 'string'));
-if (length(pilotTonesPositions) > 0)
-    usePilots = 1;
-else
-    usePilots = 0;
-end
-
-%
-%   Head data, reading as binary from file.
-%
-if (handles.ofdm.headData == 1)
-    f = fopen(handles.ofdm.headFile,'r')
-    headData = abs(fread(f,'bit1'));
-    fclose(f);
-    numHeadData = length(headData)
-    % headData
-end
 
 %
 %   Vytvorenie modulatoru
@@ -273,7 +274,7 @@ while (cyclicGeneration == 1)
     %   Jadro, OFDM modulator
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         
-    for cycleCnt = 0:1:nfor
+    for cycleCnt = 1:1:nfor
         disp(horzcat('generate samples, step ',num2str(cycleCnt)));
         tic;
 
@@ -284,31 +285,31 @@ while (cyclicGeneration == 1)
         %   hodnota vstupnych vzoriek pre USRP je napatie
         %
         if (handles.ofdm.headData == 1)
-            data_source = randi([0 1], numCarriers, numSymbols);    
             data_source = vertcat(repmat(headData,1,numSymbols), data_source);
-            data_source = reshape(data_source, (numCarriers+numHeadData)*numSymbols, 1);                
-            modulated_data = signalAmplitude * step(handles.hModulator, data_source);
-            % have to divide M, because binary data get compressed by
-            % modulation
-            data_matrix = reshape(modulated_data, (numCarriers+numHeadData)/log2(M), numSymbols);        
-        else
-            data_source = randi([0 1], length(data_source), 1);    
-            modulated_data = signalAmplitude * step(handles.hModulator, data_source);
-            data_matrix = reshape(modulated_data, numCarriers, numSymbols);        
         end
+        data_source = reshape(data_source, (numCarriers-numHeadData-numPilots)*numSymbols*log2(M), 1);                
+        modulated_data = signalAmplitude * step(handles.hModulator, data_source);
+        data_matrix = reshape(modulated_data, (numCarriers-numHeadData-numPilots), numSymbols);        
         
         %
         % Pilot tones           ZLE, SKONTROLOVAT CI SU VYPOZICIOVANE!
         %
         if (usePilots)
-            for k = 1:length(pilotTonesPositions)
-                    data_matrix = vertcat( ...
-                        data_matrix(1:pilotTonesPositions(k)-1+k-1,:), ...
-                        pilotTonesAmplitudes(k)*ones(1,numSymbols), ...
-                        data_matrix(pilotTonesPositions(k)+k-1:end,:) ...
-                    );
+            data_matrix_aux = zeros(numCarriers,numSymbols);
+            j = 1;
+            for k = 1:numCarriers
+                pilotPos = find(pilotTonesPositions==k);
+                if (pilotPos)
+                    data_matrix_aux(k,:) = pilotTonesAmplitudes(pilotPos);
+                    pilotTonesAmplitudes(pilotPos)
+                else
+                    data_matrix_aux(k,:) = data_matrix(j,:);
+                    j = j+1;
+                end
             end
-        end
+            data_matrix = data_matrix_aux;
+        end            
+        data_matrix
         
         %
         % Upsampling, in the end data are MULTIPLIED TO CONSERVE ENERGY
