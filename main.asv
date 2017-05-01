@@ -342,29 +342,28 @@ while (cyclicGeneration == 1)
                 end
             end
             
-            if (dataSourceType == 3)                                            %2-dim array to complex samples
-                data_source = reshape(data_source, 2, length(data_source)/2);
-                data_source = data_source(1,:) + 1i*data_source(2,:);
-                data_source = reshape(data_source, (numCarriers-numHeadData-numPilots)*log2(M), numSymbols);
-            else
+            if (dataSourceType == 3)                                            %gnuradio sample file, there is already modulation
+                data_source = reshape(data_source(1:end/log2(M)), (numCarriers-numHeadData-numPilots), numSymbols);
+            else                                                                %normal sample generation
                 data_source = reshape(data_source, (numCarriers-numHeadData-numPilots)*log2(M), numSymbols);
             end
         end
         handles.data.seqData = data_source; %for LW410 output
         
         %
-        %   Head data insertion
-        %
+        %   Head data insertion, from file, data are inserted before
+        %   payload.
+        %   
         if (handles.ofdm.headData == 1)
             data_source = vertcat(repmat(headData,1,numSymbols), data_source);
         end
         
         %
-        %   Carrier modulation
+        %   MODULATION
         %
-        if (dataSourceType == 3)                                                                %gnuradio file, already modulated
+        if (dataSourceType == 3)                             %gnuradio file, already modulated
             modulated_data = signalAmplitude * data_source;
-        else                                                                                    %normal modulation
+        else                                                 %normal modulation
             data_source = reshape(data_source, (numCarriers-numPilots)*numSymbols*log2(M), 1);                
             modulated_data = signalAmplitude * step(handles.hModulator, data_source);
         end

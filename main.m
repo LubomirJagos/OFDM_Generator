@@ -303,6 +303,7 @@ nfor = str2double(get(handles.editTxCycleCount, 'string'))      %defaultne 100kr
 benchmark = zeros(1,nfor);         %meranie rychlosti
 cyclicGeneration = 1;
 dataLen = (numCarriers-numHeadData-numPilots)*numSymbols*log2(M);
+dataLenMem = dataLen;
 while (cyclicGeneration == 1)
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     %   Jadro, OFDM modulator
@@ -324,9 +325,13 @@ while (cyclicGeneration == 1)
 %            data_source = floor(100.*rand((numCarriers-numHeadData-numPilots)*log2(M), numSymbols));    
         elseif (dataSourceType == 2 || dataSourceType == 3)
             if (dataSourceType == 2)                                            %normal file
-                data_source = fread(dataSourceFile, dataLen, 'ubit1');
+                data_source = fread(dataSourceFile, dataLen*log2(M), 'ubit1');
             else                                                                %gnuradio file (float32 for real, float32 for imag)
-                data_source = fread(dataSourceFile, dataLen*2, 'float32');
+                dataLen = dataLenMem/log2(M);
+                data_source = double(fread(dataSourceFile, dataLen*2, 'float32'));
+                if (mod(length(data_source),2) == 1) data_source = data_source(1:end-1); end
+                data_source = reshape(data_source, length(data_source)/2, 2);
+                data_source = data_source(:,1) + 1i*data_source(:,2);
             end
             
             if (feof(dataSourceFile))                                           %check if start from beginning of file
@@ -335,17 +340,11 @@ while (cyclicGeneration == 1)
             
             %check if enough bits was read, if no, zeros are added in the end
             if (length(data_source) < dataLen)      
-                if (dataSourceType == 2)
-                    data_source = [data_source; zeros(dataLen-length(data_source),1)];
-                else
-                    data_source = [data_source; zeros(2*dataLen-length(data_source),1)];                    
-                end
+                data_source = [data_source; zeros(dataLen-length(data_source),1)];
             end
             
             if (dataSourceType == 3)                                            %gnuradio sample file, there is already modulation
-                data_source = reshape(data_source, 2, length(data_source)/2);
-                data_source = data_source(1,:) + 1i*data_source(2,:);
-                data_source = reshape(data_source(1:end/log2(M)), (numCarriers-numHeadData-numPilots), numSymbols);
+                data_source = reshape(data_source, (numCarriers-numHeadData-numPilots), numSymbols);
             else                                                                %normal sample generation
                 data_source = reshape(data_source, (numCarriers-numHeadData-numPilots)*log2(M), numSymbols);
             end
@@ -364,7 +363,7 @@ while (cyclicGeneration == 1)
         %   MODULATION
         %
         if (dataSourceType == 3)                             %gnuradio file, already modulated
-            modulated_data = signalAmplitude * data_source;
+            modulated_data = signalAmplitude .* data_source;
         else                                                 %normal modulation
             data_source = reshape(data_source, (numCarriers-numPilots)*numSymbols*log2(M), 1);                
             modulated_data = signalAmplitude * step(handles.hModulator, data_source);
@@ -528,13 +527,13 @@ while (cyclicGeneration == 1)
     minX = -handles.lw410.fs/2;               %VYPOCET FREKVENCNEJ OSI PRE ZOBRAZENIE!
                                                 %SKONTROLOVAT!
     maxX = -minX;
-    xAxis = linspace(minX, maxX, 2048);
+    xAxis = linspace(minX, maxX, 2048).*1e-3;
 
     axes(handles.ofdmWaveAxes4);
     sigSpecNoisy = 20*log10(abs(fft(ofdm_signal_noisy, 2048))./2048);
     plot(xAxis, fftshift(sigSpecNoisy));
-    ylim([-100 -40]);
-    xlim([-fs/2 fs/2]);
+    ylim([-100 0]);
+    xlim([xAxis(1) xAxis(end)]);
     hold on;
     plot(xAxis,fftshift(sigSpec), '--r')
     hold off;
