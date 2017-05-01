@@ -28,12 +28,13 @@ hMod2 = comm.OFDMModulator( ...
 %       Bez ochranneho intervalu a cyklickeho prefixu je modulator len
 %       ifft().
 
-data = [ones(1,64) zeros(1,64) ones(1,64) zeros(1,64)]';
-data = randi([0 1],1,256)';
+%data = [ones(1,64) zeros(1,64) ones(1,64) zeros(1,64)]';
+%data = randi([0 1],1,256)';
 data = repmat([1 2 3 4 5 6 7 8],1,32)';
 
 %data2 = horzcat(repmat([1 2 3 4 5 6 7 8],1,28),[1 2 3 4 5])';
-data2 =  horzcat(repmat([2 2 0 4 10 2 0 2],1,28),[1 2 3 4 5])';
+%data2 =  horzcat(repmat([2 2 0 4 10 2 0 2],1,28),[1 2 3 4 5])';
+data2 = rand(229,1);
 
 out = step(hMod,data);
 out2 = step(hMod2,data2);
@@ -56,17 +57,25 @@ out2 = step(hMod2,data2);
 
 %data2ifft = ifft([ zeros(leftGuard,1); data2; zeros(rightGuard,1)]);
 %data2out = [data2ifft(end-prefixLen+1:end); data2ifft];
+
 data2ifft = ifft(ifftshift([ zeros(1,leftGuard) data2' zeros(1,rightGuard)]));
 data2out = [data2ifft(end-prefixLen+1:end)'; data2ifft'];
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%   VYSTUP, grafy
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 figure;
 plot(data2);
 
 figure
-plot(real(out2));
+plot1 = plot(real(out2));
+label1 = 'Realna zlozka, Matlab OFDM';
 hold on;
-plot(real(data2out),'--r');
+plot2 = plot(real(data2out),'--r');
+label2 = 'Realna zlozka normalneho IFFT';
 hold off;
+legend([plot1; plot2], label1, label2);
 
 figure
 plot(ifftshift(imag(out2)));

@@ -22,7 +22,7 @@ function varargout = main(varargin)
 
 % Edit the above text to modify the response to help main
 
-% Last Modified by GUIDE v2.5 27-Apr-2017 00:31:27
+% Last Modified by GUIDE v2.5 27-Apr-2017 23:52:31
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -160,10 +160,13 @@ signalAmplitude
 numCarriers = str2double(get(handles.numOfCarriersInput, 'string'))
 numSymbols = str2double(get(handles.numOfSymbolsInput, 'string'))
 
-cpLen = str2double(get(handles.intervalLengthInput, 'string'))
 oversampleFactor = str2double(get(handles.oversamplingInput, 'string'));
 fc = str2double(get(handles.carrierFreqInput, 'string'))*1e3
                                                              
+insertPrefixInterval= get(handles.intervalRadio, 'Value');
+cpLen = str2double(get(handles.prefixLengthInput, 'string'))
+guardLength = eval(get(handles.guardLengthInput, 'string'));  %This is array[rows cols]
+
 %
 %   Typ modulacie
 %
@@ -250,7 +253,6 @@ elseif (strcmp(handles.ofdm.dataInputMethod,'file'))
     dataSourceFileInfo = dir(handles.ofdm.file)
     dataSourceFile = fopen(handles.ofdm.file, 'r')
 end
-%handles.data.seqData = data_source;
 
 %
 %   Vytvorenie modulatoru
@@ -259,6 +261,8 @@ end
 clear modulated_data;
 if (strcmp(modType, 'QPSK'))
     handles.hModulator =  comm.QPSKModulator('BitInput',true,'SymbolMapping','Binary');
+    %LuboJ. !!!
+    %set(handles.hModulator,'BitInput',false);
 elseif (strcmp(modType, 'pi/4 DQPSK'))
     handles.hModulator =  comm.DQPSKModulator(pi/4, 'BitInput', true);
 elseif (strcmp(modType, '16QAM'))
@@ -269,9 +273,6 @@ end
 cpStart = (numCarriers-cpLen)*oversampleFactor
 
 %   Nastavenie parametrov podla GUI.
-
-insertGuardInterval = get(handles.intervalGuardIntervalRadio, 'Value');
-
 awgnLevel = str2double(get(handles.awgnLevel, 'string'));
 if (get(handles.noChannelRadio, 'Value') == 1)
     useChannelModel = 0;
@@ -315,6 +316,7 @@ while (cyclicGeneration == 1)
         %
         if (dataSourceType == 0)
             data_source = randi([0 1], (numCarriers-numHeadData-numPilots)*log2(M), numSymbols);    
+%            data_source = floor(100.*rand((numCarriers-numHeadData-numPilots)*log2(M), numSymbols));    
         elseif (dataSourceType == 2)
             data_source = fread(dataSourceFile, dataLen, 'ubit1');
             if (feof(dataSourceFile))
@@ -327,6 +329,7 @@ while (cyclicGeneration == 1)
             end
             data_source = reshape(data_source, (numCarriers-numHeadData-numPilots)*log2(M), numSymbols);
         end
+        handles.data.seqData = data_source; %for LW410 output
         
         %
         %   Head data insertion
@@ -385,19 +388,29 @@ while (cyclicGeneration == 1)
         end
         
         %
-        % Guard interval
+        % Prefix/Guard interval insertion
         %
-        if ( insertGuardInterval == 1)
-            ifft_data = vertcat( ...
-                zeros(cpLen/2*oversampleFactor, numSymbols), ...
-                ifft_data, ...
-                zeros(cpLen/2*oversampleFactor, numSymbols));
-        elseif (get(handles.intervalCyclicPrefixRadio, 'Value') == 1)
-            ifft_data = vertcat(ifft_data(cpStart+1:end,:), ifft_data);
-        else
-            %%%%NOTHING%%%%%
+        if (insertPrefixInterval == 1)
+            if (cpLen > 0)
+                ifft_data = vertcat(ifft_data(cpStart+1:end,:), ifft_data);
+            end
+            if (guardLength(1) == 0)
+                ifft_data = vertcat( ...
+                    ifft_data, ...
+                    zeros(guardLength(2)*oversampleFactor, numSymbols));
+            elseif (guardLength(2) == 0)
+                ifft_data = vertcat( ...
+                    zeros(guardLength(1)*oversampleFactor, numSymbols), ...
+                    ifft_data);
+            else
+                ifft_data = vertcat( ...
+                    zeros(guardLength(1)*oversampleFactor, numSymbols), ...
+                    ifft_data, ...
+                    zeros(guardLength(2)*oversampleFactor, numSymbols));
+            end
+                
         end
-    
+        
         %
         %   Serialization
         %
@@ -544,6 +557,13 @@ end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %       KONIEC GENEROVANIA
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+handles.data.seqData = data_source; %for LW410 output
+
+%
+%   For DEBUGGING only!
+%
+dlmwrite('OFDMOutputSignal.mat',ofdm_signal_noisy); %EXCEEDING 100 000 samples complex numbers!!!
+
 dlmwrite('benchmark.mat',benchmark,';');    %zapis do suboru
 handles.benchmark = benchmark;
 % plot(dlmread('benchmark.mat',';'))        %vykreslenie
@@ -776,18 +796,18 @@ if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgr
     set(hObject,'BackgroundColor','white');
 end
 
-function intervalLengthInput_Callback(hObject, eventdata, handles)
-% hObject    handle to intervalLengthInput (see GCBO)
+function prefixLengthInput_Callback(hObject, eventdata, handles)
+% hObject    handle to prefixLengthInput (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 
-% Hints: get(hObject,'String') returns contents of intervalLengthInput as text
-%        str2double(get(hObject,'String')) returns contents of intervalLengthInput as a double
+% Hints: get(hObject,'String') returns contents of prefixLengthInput as text
+%        str2double(get(hObject,'String')) returns contents of prefixLengthInput as a double
 
 
 % --- Executes during object creation, after setting all properties.
-function intervalLengthInput_CreateFcn(hObject, eventdata, handles)
-% hObject    handle to intervalLengthInput (see GCBO)
+function prefixLengthInput_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to prefixLengthInput (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    empty - handles not created until after all CreateFcns called
 
@@ -798,13 +818,13 @@ if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgr
 end
 
 
-% --- Executes on button press in intervalCyclicPrefixRadio.
-function intervalCyclicPrefixRadio_Callback(hObject, eventdata, handles)
-% hObject    handle to intervalCyclicPrefixRadio (see GCBO)
+% --- Executes on button press in intervalRadio.
+function intervalRadio_Callback(hObject, eventdata, handles)
+% hObject    handle to intervalRadio (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 
-% Hint: get(hObject,'Value') returns toggle state of intervalCyclicPrefixRadio
+% Hint: get(hObject,'Value') returns toggle state of intervalRadio
 
 
 % --- Executes on button press in intervalGuardIntervalRadio.
@@ -1391,3 +1411,26 @@ disp('WriteBinaryFile start.');
 WriteBinaryFile(handles.modM,64,20e3);
 set(handles.statusText, 'String', 'Head and data write as binary files OFDMHead.bin and OFDMData.bin');
 disp('WriteBinary file end.');
+
+
+
+function guardLengthInput_Callback(hObject, eventdata, handles)
+% hObject    handle to guardLengthInput (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hints: get(hObject,'String') returns contents of guardLengthInput as text
+%        str2double(get(hObject,'String')) returns contents of guardLengthInput as a double
+
+
+% --- Executes during object creation, after setting all properties.
+function guardLengthInput_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to guardLengthInput (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+% Hint: edit controls usually have a white background on Windows.
+%       See ISPC and COMPUTER.
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end
