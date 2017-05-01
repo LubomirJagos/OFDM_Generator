@@ -252,6 +252,10 @@ elseif (strcmp(handles.ofdm.dataInputMethod,'file'))
     dataSourceType = 2;
     dataSourceFileInfo = dir(handles.ofdm.file)
     dataSourceFile = fopen(handles.ofdm.file, 'r')
+elseif (strcmp(handles.ofdm.dataInputMethod,'gnuradio'))
+    dataSourceType = 3;
+    dataSourceFileInfo = dir(handles.ofdm.file)
+    dataSourceFile = fopen(handles.ofdm.file, 'r')
 end
 
 %
@@ -307,53 +311,80 @@ while (cyclicGeneration == 1)
     for cycleCnt = 1:1:nfor
         disp(horzcat('generate samples, step ',num2str(cycleCnt)));
         tic;
-
+        
         %
-        %   Data source, generating data
+        %   DATA SOURCE, READING DATA
         %       0 = randi
         %       1 = user defined array
         %       2 = file
+        %       3 = gnuradio file
         %
         if (dataSourceType == 0)
             data_source = randi([0 1], (numCarriers-numHeadData-numPilots)*log2(M), numSymbols);    
 %            data_source = floor(100.*rand((numCarriers-numHeadData-numPilots)*log2(M), numSymbols));    
-        elseif (dataSourceType == 2)
-            data_source = fread(dataSourceFile, dataLen, 'ubit1');
-            if (feof(dataSourceFile))
+        elseif (dataSourceType == 2 || dataSourceType == 3)
+            if (dataSourceType == 2)                                            %normal file
+                data_source = fread(dataSourceFile, dataLen, 'ubit1');
+            else                                                                %gnuradio file (float32 for real, float32 for imag)
+                data_source = fread(dataSourceFile, dataLen*2, 'float32');
+            end
+            
+            if (feof(dataSourceFile))                                           %check if start from beginning of file
                 fseek(dataSourceFile,0,'bof');
             end
             
-            %check if enough bits was read
-            if (length(data_source) < dataLen)
-                data_source = [data_source; zeros(dataLen-length(data_source),1)];
+            %check if enough bits was read, if no, zeros are added in the end
+            if (length(data_source) < dataLen)      
+                if (dataSourceType == 2)
+                    data_source = [data_source; zeros(dataLen-length(data_source),1)];
+                else
+                    data_source = [data_source; zeros(2*dataLen-length(data_source),1)];                    
+                end
             end
-            data_source = reshape(data_source, (numCarriers-numHeadData-numPilots)*log2(M), numSymbols);
+            
+            if (dataSourceType == 3)                                            %gnuradio sample file, there is already modulation
+                data_source = reshape(data_source, 2, length(data_source)/2);
+                data_source = data_source(1,:) + 1i*data_source(2,:);
+                data_source = reshape(data_source(1:end/log2(M)), (numCarriers-numHeadData-numPilots), numSymbols);
+            else                                                                %normal sample generation
+                data_source = reshape(data_source, (numCarriers-numHeadData-numPilots)*log2(M), numSymbols);
+            end
         end
         handles.data.seqData = data_source; %for LW410 output
         
         %
-        %   Head data insertion
-        %
+        %   Head data insertion, from file, data are inserted before
+        %   payload.
+        %   
         if (handles.ofdm.headData == 1)
             data_source = vertcat(repmat(headData,1,numSymbols), data_source);
         end
-        data_source = reshape(data_source, (numCarriers-numPilots)*numSymbols*log2(M), 1);                
-        modulated_data = signalAmplitude * step(handles.hModulator, data_source);
+        
+        %
+        %   MODULATION
+        %
+        if (dataSourceType == 3)                             %gnuradio file, already modulated
+            modulated_data = signalAmplitude * data_source;
+        else                                                 %normal modulation
+            data_source = reshape(data_source, (numCarriers-numPilots)*numSymbols*log2(M), 1);                
+            modulated_data = signalAmplitude * step(handles.hModulator, data_source);
+        end
         data_matrix = reshape(modulated_data, (numCarriers-numPilots), numSymbols);        
         
         %
         % PILOTS INSERTION
         %
         % Carriers order - index:
-        %   1       =  DC
-        %   2       =  1st       carrier
-        %           .
-        %           .
-        %   N/2     =  fs/2      carrier
-        %   N/2 + 1 = -fs/2 + df carrier
-        %           .
-        %           .
-        %   N       =  fs        carrier
+        % array index |  frequency bin
+        %   1         =  DC
+        %   2         =  1st       carrier
+        %             .
+        %             .
+        %   N/2       =  fs/2      carrier
+        %   N/2 + 1   = -fs/2 + df carrier
+        %             .
+        %             .
+        %   N         =  fs        carrier
         %
         %   Pilots are inserted between carriers to right positions.
         %   Carriers around them are shifted.
@@ -363,6 +394,9 @@ while (cyclicGeneration == 1)
             j = 1;
             for k = 1:numCarriers
                 pilotPos = find(pilotTonesPositions==k);
+                if (isempty(pilotPos) && k > numCarriers/2)
+                    pilotPos = find(pilotTonesPositions== -(k-numCarriers/2));
+                end
                 if (pilotPos)
                     data_matrix_aux(k,:) = pilotTonesAmplitudes(pilotPos);
                 else
@@ -735,6 +769,12 @@ elseif (get(handles.dataInputFileRadio, 'Value') == 1)
     handles.ofdm.file = horzcat(path, fileName);
     set(handles.seqInput, 'string', horzcat(path, fileName));
     set(handles.statusText, 'string', horzcat('Data input from file ', path, fileName));
+elseif (get(handles.gnuradioInputFileRadio, 'Value') == 1)
+    handles.ofdm.dataInputMethod = 'gnuradio';
+    [fileName,path] = uigetfile('','Select file with gnuradio samples');
+    handles.ofdm.file = horzcat(path, fileName);
+    set(handles.seqInput, 'string', horzcat(path, fileName));
+    set(handles.statusText, 'string', horzcat('Data input from gnuradio file ', path, fileName));
 end
 
 disp(horzcat('Data input method changed to ', handles.ofdm.dataInputMethod));
