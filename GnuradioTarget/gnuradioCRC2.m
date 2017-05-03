@@ -85,7 +85,13 @@ function crc = gnuradioCRC2(bytes)
         pos = bitand(bitxor(bytes(i), bitshift(crc,-24)), castMask2)+1;
         crc = bitxor(crcTable(pos), bitshift(crc, 8));          
     end
-    crc = bi2de(fliplr(de2bi(crc)));
+    
+    crc = de2bi(crc);
+    if (length(crc) < 32)
+        crc = [crc zeros(1,32-length(crc))];
+    end
+    crc = bi2de(fliplr(crc));
+    
     crc = bitxor(crc, hex2dec('FFFFFFFF'));
 
     dec2hex(crc)

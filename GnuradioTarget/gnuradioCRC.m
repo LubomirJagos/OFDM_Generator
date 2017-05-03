@@ -92,7 +92,13 @@ function crc = gnuradioCRC(bytes)
         % XOR-in remainder from lookup table using the calculated index
         crc = bitand(bitxor(crc, crcTable(pos)), castMask);
     end
-    crc = bi2de(fliplr(de2bi(crc)));
+    
+    crc = de2bi(crc);
+    if (length(crc) < 32)
+        crc = [crc zeros(1,32-length(crc))];
+    end
+    crc = bi2de(fliplr(crc));
+    
     crc = bitxor(crc, hex2dec('FFFFFFFF'));
 
     dec2hex(crc)
