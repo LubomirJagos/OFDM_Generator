@@ -15,10 +15,10 @@ payloadMod = comm.QPSKModulator('PhaseOffset', 3/4*pi, 'BitInput', true);
 sync1 = [0., 0., 0., 0., 0., 0., 0., 1.41421356, 0., -1.41421356, 0., 1.41421356, 0., -1.41421356, 0., -1.41421356, 0., -1.41421356, 0., 1.41421356, 0., -1.41421356, 0., 1.41421356, 0., -1.41421356, 0., -1.41421356, 0., -1.41421356, 0., -1.41421356, 0., 1.41421356, 0., -1.41421356, 0., 1.41421356, 0., 1.41421356, 0., 1.41421356, 0., -1.41421356, 0., 1.41421356, 0., 1.41421356, 0., 1.41421356, 0., -1.41421356, 0., 1.41421356, 0., 1.41421356, 0., 1.41421356, 0., 0., 0., 0., 0., 0.];
 sync2 = [0, 0, 0, 0, 0, 0, -1, -1, -1, -1, 1, 1, -1, -1, -1, 1, -1, 1, 1, 1, 1, 1, -1, -1, -1, -1, -1, 1, -1, -1, 1, -1, 0, 1, -1, 1, 1, 1, -1, 1, 1, 1, -1, 1, 1, 1, 1, -1, 1, -1, -1, -1, 1, -1, 1, -1, -1, -1, -1, 0, 0, 0, 0, 0];
 occupiedCarriers1 = [1:6 8:20 22:26]+1;
-occupiedCarriers2 = [-26:-22 -20:-8 -6:-1]+1+64;
-occupiedCarriers = [occupiedCarriers1 occupiedCarriers2];
+occupiedCarriers2 = [-26:-22 -20:-8 -6:-1]+1;
+occupiedCarriers = [occupiedCarriers1 occupiedCarriers2]+32;
 pilotCarriers = [7 21 43 57]+1;
-pilotSymbols = [10 10 10 -10];          %amplitudes
+pilotSymbols = [1 1 1 -1];          %amplitudes
 
 fs = 200e3;
 fftLen = 64;            %must be even!
@@ -26,16 +26,16 @@ packetLen = 96;
 nSymbols = ceil(packetLen/length(occupiedCarriers));
 nProcessPackets = 1;
 
-for k = 1:length(occupiedCarriers)
-    if (occupiedCarriers(k) < 1)
-        occupiedCarriers(k) = occupiedCarriers(k) + fftLen;
-    end
-end
-for k = 1:length(pilotCarriers)
-    if (pilotCarriers(k) < 1)
-        pilotCarriers(k) = pilotCarriers(k) + fftLen;
-    end
-end
+% for k = 1:length(occupiedCarriers)
+%     if (occupiedCarriers(k) < 1)
+%         occupiedCarriers(k) = occupiedCarriers(k) + fftLen;
+%     end
+% end
+% for k = 1:length(pilotCarriers)
+%     if (pilotCarriers(k) < 1)
+%         pilotCarriers(k) = pilotCarriers(k) + fftLen;
+%     end
+% end
 
 % dataIn = randi(255,1,packetLen+4);
 % dataIn = zeros(1,packetLen+4);
@@ -54,18 +54,25 @@ for j = 1:nProcessPackets
     payload = reshape(payload,1,numel(payload));
 
     modHeader = step(headMod, header')';
-    modPayload = step(payloadMod, payload')' .* 1/sqrt(2);
+    modPayload = step(payloadMod, payload')';
     packet = [modHeader modPayload];
     dPackets = [dPackets packet];
 
+    %
+    %   Until here it looks good.
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    
+    %
+    %   Allocator is NOT RUNNING CORRECTLY!
+    %
     frameAux = zeros(1,fftLen);
     frame = [];
     for k = 1:nSymbols
-        frameAux(occupiedCarriers) = packet(1:length(occupiedCarriers));
+        frameAux(occupiedCarriers) = modPayload(1:length(occupiedCarriers));
         frameAux(pilotCarriers) = pilotSymbols(1:length(pilotCarriers));
         frame = [frame frameAux];
     end
-    sig = [sync1 sync2 frame];
+    sig = [sync1 sync2 modHeader frame];
     dFrames = [dFrames sig];
 
 %     timeAxis = [1:1:length(sig)].*1/fs;
