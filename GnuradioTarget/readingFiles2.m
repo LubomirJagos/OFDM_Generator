@@ -16,7 +16,7 @@ fclose(f);
 
 calcPackets = [];
 for i = 1:(nPacket+4):(nPacket+4)*nPacketProcess
-    crc = gnuradioCRC(headerBytes(i:i+nPacket-1));
+    crc = gnuradioCRC32(headerBytes(i:i+nPacket-1));
     crcAux = de2bi(crc);
     crc1 = bi2de(crcAux(1:8));
     crc2 = bi2de(crcAux(9:16));
@@ -32,7 +32,7 @@ stem(calcPackets,'-xr');
 hold off;
 title('Hlavicka paketov');
 subplot(212);
-plot(headerBytes - calcPackets);
+plot(headerBytes - double(calcPackets));
 
 
 %% Citanie vystupneho signalu

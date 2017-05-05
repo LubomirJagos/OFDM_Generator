@@ -13,7 +13,7 @@ f = fopen('_crc_seq_const_out_1.txt','r');
 headerBits = fread(f,nHeader,'uint8')';
 fclose(f);
 
-crc = gnuradioCRC(headerBits(1:nPacket))
+crc = gnuradioCRC32(headerBits(1:nPacket))
 crcAux = de2bi(crc)
 crc1 = bi2de(crcAux(1:8));
 crc2 = bi2de(crcAux(9:16));

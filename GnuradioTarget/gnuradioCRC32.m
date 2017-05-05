@@ -1,4 +1,4 @@
-function crc = gnuradioCRC(bytes)
+function crc = gnuradioCRC32(bytes)
     crcTable = [ ...
         hex2dec('00000000') hex2dec('04C11DB7') hex2dec('09823B6E') hex2dec('0D4326D9') ... 
         hex2dec('130476DC') hex2dec('17C56B6B') hex2dec('1A864DB2') hex2dec('1E475005') ... 
@@ -66,42 +66,22 @@ function crc = gnuradioCRC(bytes)
         hex2dec('BCB4666D') hex2dec('B8757BDA') hex2dec('B5365D03') hex2dec('B1F740B4') ... 
 	];
 
-    width = 32;
-    crc = hex2dec('FFFFFFFF');
-    castMask = hex2dec('FFFFFFFF');
-    castMask2 = hex2dec('FF');
+    crc = uint32(hex2dec('FFFFFFFF'));
+    castMask = hex2dec('FF');
 
     for i = 1:1:length(bytes)
-        b = de2bi(bytes(i));
-        if (length(b) < 8)
-            b = [b zeros(1,8-length(b))];
-        end
-        b = fliplr(b);
-        bytes(i) = bi2de(b);
+        bytes(i) = reverseArrayBits(bytes(i),8);
     end
 
-    curByte = 0;
     for i = 1:1:length(bytes)
-        curByte = bytes(i);
-        % update the MSB of crc value with next input byte
-        crc = bitand(bitxor(crc, bitshift(curByte,width-8)), castMask);
-        % this MSB byte value is the index into the lookup table
-        pos = bitand(bitshift(crc, -(width-8)), castMask2)+1;
-        % shift out this index
-        crc = bitand(bitshift(crc,8), castMask);
-        % XOR-in remainder from lookup table using the calculated index
-        crc = bitand(bitxor(crc, crcTable(pos)), castMask);
+        pos = bitand(bitxor(bytes(i), bitshift(crc,-24)), castMask)+1;  %matlab arrays from 1, that's why plus 1
+        crc = bitxor(crcTable(pos), bitshift(crc, 8));          
     end
     
-    crc = de2bi(crc);
-    if (length(crc) < 32)
-        crc = [crc zeros(1,32-length(crc))];
-    end
-    crc = bi2de(fliplr(crc));
-    
+    crc = reverseArrayBits(crc,32);    
     crc = bitxor(crc, hex2dec('FFFFFFFF'));
 
-    dec2hex(crc)
+    dec2hex(crc)    %MSB is on the right side
 end
 
 
