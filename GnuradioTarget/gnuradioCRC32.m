@@ -81,7 +81,7 @@ function crc = gnuradioCRC32(bytes)
     crc = reversePaddedDecNumBits(crc,32);    
     crc = bitxor(crc, hex2dec('FFFFFFFF'));
 
-    dec2hex(crc)    %MSB is on the right side
+%     dec2hex(crc)    %MSB is on the right side
 end
 
 

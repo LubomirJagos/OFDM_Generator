@@ -5,6 +5,7 @@
 %
 %   Input values = values for processing
 %
+clear all;
 
 crcLen = 4;             %CHECK IF THERE IS 'Stream CRC32' block used before
 
@@ -13,7 +14,7 @@ nPacket = bitand(uint16(nPacket),hex2dec('0FFF'));  %just 12 bits
 nPacketProcess = 1;
 nRead = nPacketProcess*nPacket;
 nHeader = 48;                       %48Bytes (ie. [0 0 1 1 1 0])
-numPacket = 575;
+numPacket = 875;
 numPacket = bitand(uint16(numPacket),hex2dec('0FFF'));  %just 12 bits
 
 %
@@ -59,11 +60,11 @@ crc8 = gnuradioCRC8([            ...
     %
     %   Creating header, full header is 48b long
     %
-    nPacket12b = de2bi(nPacket,12);
+    nPacket12b = de2bi(nPacket);
     if (length(nPacket12b) < 12)
         nPacket12b = [nPacket12b zeros(1,12-length(nPacket12b))];
     else
-        nPacket12b = nPacket(1:12);
+        nPacket12b = nPacket12b(1:12);
     end
 
     numPacket12b = de2bi(numPacket);
@@ -79,8 +80,8 @@ crc8 = gnuradioCRC8([            ...
         de2bi(crc8)  ...
         zeros(1,24)  ...
     ];
-    dec2hex(bi2de(header(1:12)))
-    dec2hex(bi2de(header(13:24)))
+    bi2de(header(1:12))
+    bi2de(header(13:24))
     dec2hex(bi2de(header(25:48)))
 
 
