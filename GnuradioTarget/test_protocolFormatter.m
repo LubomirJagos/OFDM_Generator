@@ -14,7 +14,7 @@ nPacket = bitand(uint16(nPacket),hex2dec('0FFF'));  %just 12 bits
 nPacketProcess = 1;
 nRead = nPacketProcess*nPacket;
 nHeader = 48;                       %48Bytes (ie. [0 0 1 1 1 0])
-numPacket = 875;
+numPacket = 420;
 numPacket = bitand(uint16(numPacket),hex2dec('0FFF'));  %just 12 bits
 
 %
@@ -27,8 +27,8 @@ headerBytes = fread(f2,nHeader,'uint8')';
 fclose(f2);
 
 disp('Protocol Formatter Output, HEX values');
-packetLen = dec2hex(bi2de(headerBytes(1:12)))
-packetNum = dec2hex(bi2de(headerBytes(13:24)))
+packetLen = bi2de(headerBytes(1:12))
+packetNum = bi2de(headerBytes(13:24))
 packetCRC = dec2hex(bi2de(headerBytes(25:32)))
 %rest 33:48 are just zeros
 

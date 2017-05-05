@@ -22,7 +22,7 @@ function varargout = main(varargin)
 
 % Edit the above text to modify the response to help main
 
-% Last Modified by GUIDE v2.5 27-Apr-2017 23:52:31
+% Last Modified by GUIDE v2.5 05-May-2017 04:44:55
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -157,7 +157,7 @@ signalAmplitude = str2double(get(handles.editSignalAmplitude, 'string'))
 'Signal amplitude set to: '
 signalAmplitude
 
-numCarriers = str2double(get(handles.numOfCarriersInput, 'string'))
+ifftLen = str2double(get(handles.ifftLen, 'string'))
 numSymbols = str2double(get(handles.numOfSymbolsInput, 'string'))
 
 oversampleFactor = str2double(get(handles.oversamplingInput, 'string'));
@@ -211,9 +211,9 @@ if (handles.ofdm.headData == 1)
     %
     %   Head data clipping.
     %
-    if (numHeadData > numCarriers)
+    if (numHeadData > ifftLen)
         numHeadDataOld = numHeadData;
-        headData = headData(1:numCarriers/2,1);
+        headData = headData(1:ifftLen/2,1);
         numHeadData = length(headData)/log2(M)
 %        set(handles.statusText, 'String', ...
 disp(...
@@ -274,7 +274,7 @@ elseif (strcmp(modType, '16QAM'))
 end
 
 %  Vypocet pociatku cyklickeho prefixu
-cpStart = (numCarriers-cpLen)*oversampleFactor
+cpStart = (ifftLen-cpLen)*oversampleFactor
 
 %   Nastavenie parametrov podla GUI.
 awgnLevel = str2double(get(handles.awgnLevel, 'string'));
@@ -302,7 +302,7 @@ end
 nfor = str2double(get(handles.editTxCycleCount, 'string'))      %defaultne 100krat prebehne tx
 benchmark = zeros(1,nfor);         %meranie rychlosti
 cyclicGeneration = 1;
-dataLen = (numCarriers-numHeadData-numPilots)*numSymbols*log2(M);
+dataLen = (ifftLen-numHeadData-numPilots)*numSymbols*log2(M);
 dataLenMem = dataLen;
 while (cyclicGeneration == 1)
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -321,7 +321,7 @@ while (cyclicGeneration == 1)
         %       3 = gnuradio file
         %
         if (dataSourceType == 0)
-            data_source = randi([0 1], (numCarriers-numHeadData-numPilots)*log2(M), numSymbols);    
+            data_source = randi([0 1], (ifftLen-numHeadData-numPilots)*log2(M), numSymbols);    
 %            data_source = floor(100.*rand((numCarriers-numHeadData-numPilots)*log2(M), numSymbols));    
         elseif (dataSourceType == 2 || dataSourceType == 3)
             if (dataSourceType == 2)                                            %normal file
@@ -344,9 +344,9 @@ while (cyclicGeneration == 1)
             end
             
             if (dataSourceType == 3)                                            %gnuradio sample file, there is already modulation
-                data_source = reshape(data_source, (numCarriers-numHeadData-numPilots), numSymbols);
+                data_source = reshape(data_source, (ifftLen-numHeadData-numPilots), numSymbols);
             else                                                                %normal sample generation
-                data_source = reshape(data_source, (numCarriers-numHeadData-numPilots)*log2(M), numSymbols);
+                data_source = reshape(data_source, (ifftLen-numHeadData-numPilots)*log2(M), numSymbols);
             end
         end
         handles.data.seqData = data_source; %for LW410 output
@@ -365,10 +365,10 @@ while (cyclicGeneration == 1)
         if (dataSourceType == 3)                             %gnuradio file, already modulated
             modulated_data = signalAmplitude .* data_source;
         else                                                 %normal modulation
-            data_source = reshape(data_source, (numCarriers-numPilots)*numSymbols*log2(M), 1);                
+            data_source = reshape(data_source, (ifftLen-numPilots)*numSymbols*log2(M), 1);                
             modulated_data = signalAmplitude * step(handles.hModulator, data_source);
         end
-        data_matrix = reshape(modulated_data, (numCarriers-numPilots), numSymbols);        
+        data_matrix = reshape(modulated_data, (ifftLen-numPilots), numSymbols);        
         
         %
         % PILOTS INSERTION
@@ -389,12 +389,12 @@ while (cyclicGeneration == 1)
         %   Carriers around them are shifted.
         %
         if (usePilots)
-            data_matrix_aux = zeros(numCarriers,numSymbols);
+            data_matrix_aux = zeros(ifftLen,numSymbols);
             j = 1;
-            for k = 1:numCarriers
+            for k = 1:ifftLen
                 pilotPos = find(pilotTonesPositions==k);
-                if (isempty(pilotPos) && k > numCarriers/2)
-                    pilotPos = find(pilotTonesPositions== -(k-numCarriers/2));
+                if (isempty(pilotPos) && k > ifftLen/2)
+                    pilotPos = find(pilotTonesPositions== -(k-ifftLen/2));
                 end
                 if (pilotPos)
                     data_matrix_aux(k,:) = pilotTonesAmplitudes(pilotPos);
@@ -413,11 +413,11 @@ while (cyclicGeneration == 1)
         if (oversampleFactor ~= 1)
             ifft_data = ifft( ...
                     [data_matrix(1:end/2,:); ...
-                    zeros((oversampleFactor-1)*numCarriers, numSymbols); ...
+                    zeros((oversampleFactor-1)*ifftLen, numSymbols); ...
                     data_matrix(end/2+1:end,:)], ...
-                    oversampleFactor*numCarriers) * oversampleFactor;
+                    oversampleFactor*ifftLen) * oversampleFactor;
         else
-            ifft_data = ifft(data_matrix,numCarriers);
+            ifft_data = ifft(data_matrix,ifftLen);
         end
         
         %
@@ -503,7 +503,7 @@ while (cyclicGeneration == 1)
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
     axes(handles.ofdmWaveAxes);
-    plot(zeros(1,numCarriers));
+    plot(zeros(1,ifftLen));
     title('OFDM signal');
     xlabel('sample[-]');
     ylabel('A[V]');
@@ -814,18 +814,18 @@ end
 
 
 
-function numOfCarriersInput_Callback(hObject, eventdata, handles)
-% hObject    handle to numOfCarriersInput (see GCBO)
+function ifftLen_Callback(hObject, eventdata, handles)
+% hObject    handle to ifftLen (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 
-% Hints: get(hObject,'String') returns contents of numOfCarriersInput as text
-%        str2double(get(hObject,'String')) returns contents of numOfCarriersInput as a double
+% Hints: get(hObject,'String') returns contents of ifftLen as text
+%        str2double(get(hObject,'String')) returns contents of ifftLen as a double
 
 
 % --- Executes during object creation, after setting all properties.
-function numOfCarriersInput_CreateFcn(hObject, eventdata, handles)
-% hObject    handle to numOfCarriersInput (see GCBO)
+function ifftLen_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to ifftLen (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    empty - handles not created until after all CreateFcns called
 
@@ -1215,7 +1215,7 @@ function saveCurrentSettings_Callback(hObject, eventdata, handles)
 %       - generating file names by date
 %
 paramsToSave = [ ...
-    str2num(get(handles.numOfCarriersInput, 'String')) ...
+    str2num(get(handles.ifftLen, 'String')) ...
     str2num(get(handles.editSignalAmplitude, 'String')) ...
 ];
 dlmwrite(horzcat('OFDMSettings ',datestr(now,'dd-mmm-yyyy HH-MM-SS'),'.txt'), paramsToSave,'delimiter',';');
@@ -1228,7 +1228,7 @@ function pushbutton18_Callback(hObject, eventdata, handles)
 settingsFile = dir('OFDMSettings*');
 paramsToRead = [];
 paramsToRead = dlmread(settingsFile(end).name,';');
-set(handles.numOfCarriersInput, 'String', paramsToRead(1));
+set(handles.ifftLen, 'String', paramsToRead(1));
 set(handles.editSignalAmplitude, 'String', paramsToRead(2));
 guidata(hObject, handles);
 
