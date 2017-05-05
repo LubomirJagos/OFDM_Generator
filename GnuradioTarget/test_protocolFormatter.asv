@@ -13,7 +13,7 @@ nPacket = bitand(uint16(nPacket),hex2dec('0FFF'));  %just 12 bits
 nPacketProcess = 1;
 nRead = nPacketProcess*nPacket;
 nHeader = 48;                       %48Bytes (ie. [0 0 1 1 1 0])
-numPacket = 375;
+numPacket = 575;
 numPacket = bitand(uint16(numPacket),hex2dec('0FFF'));  %just 12 bits
 
 %
@@ -49,16 +49,17 @@ crcIn = [];
 %     numPacketForCRC = numPacket;
 % end
 
-crc8 = gnuradioCRC8([          ...
-    bitshift(nPacketForCRC,-8) ...
-    bitand(nPacketForCRC,255)  ...
-    numPacketForCRC            ...
-0]);
+crc8 = gnuradioCRC8([            ...
+    bitshift(nPacketForCRC,-8)   ...
+    bitand(nPacketForCRC,255)    ...
+    bitshift(numPacketForCRC,-8) ...
+    bitand(numPacketForCRC,255)  ...
+]);
 
     %
     %   Creating header, full header is 48b long
     %
-    nPacket12b = de2bi(nPacket);
+    nPacket12b = de2bi(nPacket,12);
     if (length(nPacket12b) < 12)
         nPacket12b = [nPacket12b zeros(1,12-length(nPacket12b))];
     else

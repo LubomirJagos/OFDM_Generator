@@ -35,7 +35,7 @@ function crc8 = gnuradioCRC8(bytes)
 
 %     NO INPUT REVERSE
 %     for i = 1:1:length(bytes)
-%         bytes(i) = reverseArrayBits(bytes(i),8);
+%         bytes(i) = reversePaddedDecNumBits(bytes(i),8);
 %     end
 
     for i = 1:1:length(bytes)
@@ -44,7 +44,7 @@ function crc8 = gnuradioCRC8(bytes)
     end
     
 %     NO OUTPUT REVERSE
-%     crc = reverseArrayBits(crc,8);    
+%     crc = reversePaddedDecNumBits(crc,8);    
 
 %     dec2hex(crc8)    %MSB is on the right side
 end

@@ -70,7 +70,7 @@ function crc = gnuradioCRC32(bytes)
     castMask = hex2dec('FF');
 
     for i = 1:1:length(bytes)
-        bytes(i) = reverseArrayBits(bytes(i),8);
+        bytes(i) = reversePaddedDecNumBits(bytes(i),8);
     end
 
     for i = 1:1:length(bytes)
@@ -78,7 +78,7 @@ function crc = gnuradioCRC32(bytes)
         crc = bitxor(crcTable(pos), bitshift(crc, 8));          
     end
     
-    crc = reverseArrayBits(crc,32);    
+    crc = reversePaddedDecNumBits(crc,32);    
     crc = bitxor(crc, hex2dec('FFFFFFFF'));
 
     dec2hex(crc)    %MSB is on the right side

@@ -59,7 +59,7 @@ crc8 = gnuradioCRC8([            ...
     %
     %   Creating header, full header is 48b long
     %
-    nPacket12b = de2bi(nPacket);
+    nPacket12b = de2bi(nPacket,12);
     if (length(nPacket12b) < 12)
         nPacket12b = [nPacket12b zeros(1,12-length(nPacket12b))];
     else
