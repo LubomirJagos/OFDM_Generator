@@ -9,33 +9,32 @@ clear all; close all;
 headMod = comm.BPSKModulator('PhaseOffset', pi);
 payloadMod = comm.QPSKModulator('PhaseOffset', 3/4*pi, 'BitInput', true);
 
+fs = 200e3;
+fftLen = 64;            %must be even!
+packetLen = 96;
+nProcessPackets = 1;
+
 %
 %   Generate data.
 %
 sync1 = [0., 0., 0., 0., 0., 0., 0., 1.41421356, 0., -1.41421356, 0., 1.41421356, 0., -1.41421356, 0., -1.41421356, 0., -1.41421356, 0., 1.41421356, 0., -1.41421356, 0., 1.41421356, 0., -1.41421356, 0., -1.41421356, 0., -1.41421356, 0., -1.41421356, 0., 1.41421356, 0., -1.41421356, 0., 1.41421356, 0., 1.41421356, 0., 1.41421356, 0., -1.41421356, 0., 1.41421356, 0., 1.41421356, 0., 1.41421356, 0., -1.41421356, 0., 1.41421356, 0., 1.41421356, 0., 1.41421356, 0., 0., 0., 0., 0., 0.];
 sync2 = [0, 0, 0, 0, 0, 0, -1, -1, -1, -1, 1, 1, -1, -1, -1, 1, -1, 1, 1, 1, 1, 1, -1, -1, -1, -1, -1, 1, -1, -1, 1, -1, 0, 1, -1, 1, 1, 1, -1, 1, 1, 1, -1, 1, 1, 1, 1, -1, 1, -1, -1, -1, 1, -1, 1, -1, -1, -1, -1, 0, 0, 0, 0, 0];
-occupiedCarriers1 = [1:6 8:20 22:26]+1;
-occupiedCarriers2 = [-26:-22 -20:-8 -6:-1]+1;
-occupiedCarriers = [occupiedCarriers1 occupiedCarriers2]+32;
-pilotCarriers = [7 21 43 57]+1;
+occupiedCarriers = [(-26:-22) (-20:-8) (-6:-1) 1:6 8:20 22:26]+1;
+pilotCarriers = [-21 -7 7 21]+1;
 pilotSymbols = [1 1 1 -1];          %amplitudes
 
-fs = 200e3;
-fftLen = 64;            %must be even!
-packetLen = 96;
 nSymbols = ceil(packetLen/length(occupiedCarriers));
-nProcessPackets = 1;
 
-% for k = 1:length(occupiedCarriers)
-%     if (occupiedCarriers(k) < 1)
-%         occupiedCarriers(k) = occupiedCarriers(k) + fftLen;
-%     end
-% end
-% for k = 1:length(pilotCarriers)
-%     if (pilotCarriers(k) < 1)
-%         pilotCarriers(k) = pilotCarriers(k) + fftLen;
-%     end
-% end
+for k = 1:length(occupiedCarriers)
+    if (occupiedCarriers(k) < 1)
+        occupiedCarriers(k) = occupiedCarriers(k) + fftLen;
+    end
+end
+for k = 1:length(pilotCarriers)
+    if (pilotCarriers(k) < 1)
+        pilotCarriers(k) = pilotCarriers(k) + fftLen;
+    end
+end
 
 % dataIn = randi(255,1,packetLen+4);
 % dataIn = zeros(1,packetLen+4);
@@ -62,7 +61,7 @@ for j = 1:nProcessPackets
     %   Until here it looks good.
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     
-    %
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     %   Allocator is NOT RUNNING CORRECTLY!
     %
     frameAux = zeros(1,fftLen);
@@ -131,7 +130,7 @@ plot(real(gnuradioData));
 title('Output muxed data header and payload, GNURadio');
 grid on;
 hold on;
-plot(imag(gnuradioData));
+plot(imag(gnuradioData),'-r');
 hold off;
 
 figure;
@@ -139,7 +138,7 @@ plot(real(dPackets));
 title('CALCULATED header and payload');
 grid on;
 hold on;
-plot(imag(dPackets));
+plot(imag(dPackets),'-r');
 hold off;
 
 figure;
@@ -161,7 +160,7 @@ plot(real(gnuradioData));
 title('Output allocated carriers, GNURadio');
 grid on;
 hold on;
-plot(imag(gnuradioData));
+plot(imag(gnuradioData),'-r');
 hold off;
 
 figure;
@@ -169,7 +168,7 @@ plot(real(dFrames));
 title('CALCULATED frame');
 grid on;
 hold on;
-plot(imag(dFrames));
+plot(imag(dFrames),'-r');
 hold off;
 
 figure;
