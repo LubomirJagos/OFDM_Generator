@@ -8,8 +8,9 @@ clear all; close all;
 %
 fs = 200e3;
 fftLen = 64;
+cpLen = 16;
 packetLen = 96;
-nProcessPackets = 4;
+nProcessPackets = 100;
 occupiedCarriers = [39:43 45:57 59:64 2:7 9:21 23:27];  % <-------- It has to be this way, don't change order, otherwise it's not giving right results!
 pilotCarriers = [44 58 8 22];
 pilotSymbols = [1 1 1 -1];
@@ -28,7 +29,7 @@ tic;
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %   Generovanie packetov
 %
-f = fopen('_test_mod_randseq_1.txt','r');
+f = fopen('block_tests_files/test_cp_In.txt','r');
 dataIn = [];
 dPackets = [];
 dFrames = [];
@@ -69,64 +70,37 @@ dFrames = allocateCarriers(         ...
     sync2);
 
 benchmark = toc
-%
-%   Debug checking diff btw. muxed stream in gnuradio and calculated in
-%   matlab
-%
-f2 = fopen('_test_mod_muxed_1.txt','r');
-gnuradioData = fread(f2,2*length(dPackets),'float32');
-fclose(f2);
-gnuradioData = reshape(gnuradioData,2,length(dPackets));
-gnuradioData = gnuradioData(1,:) + 1i*gnuradioData(2,:);
+
+ifftSig = []
+for k = 1:fftLen:fftLen*nProcessPackets
+    ifftChunk = ifft(ifftshift(dFrames(k:k+fftLen-1))).*fftLen;
+    ifftSig = [ifftSig ifftChunk(end-cpLen+1:end) ifftChunk];
+end
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%% Results comparison with Gnuradio %%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+f = fopen('block_tests_files/test_cp_Out.txt','r');
+gnuradioSamp = arrayToComplex(fread(f,2*length(ifftSig),'float32')');    % <----- pozor normovanie!!
+fclose(f);
 
 figure;
-plot(real(gnuradioData));
-title('Output muxed data header and payload, GNURadio');
-grid on;
+plot(real(ifftSig));
+title('Calculated IFFT signal with cyclic prefix');
 hold on;
-plot(imag(gnuradioData),'-r');
+plot(imag(ifftSig));
 hold off;
 
 figure;
-plot(real(dPackets));
-title('CALCULATED header and payload');
-grid on;
+plot(real(gnuradioSamp));
+title('Gnuradio CP block output');
 hold on;
-plot(imag(dPackets),'-r');
+plot(imag(gnuradioSamp));
 hold off;
 
 figure;
-plot(abs(dPackets-gnuradioData));
-title('Comparison gnuradio, calculated from muxer');
-
-%
-%   Debug check allocator.
-%
-f2 = fopen('_test_mod_allocated_1.txt','r');
-gnuradioData = fread(f2,2*length(dFrames),'float32');
-fclose(f2);
-gnuradioData = reshape(gnuradioData,2,length(dFrames));
-gnuradioData = gnuradioData(1,:) + 1i*gnuradioData(2,:);
-
-figure;
-plot(real(gnuradioData));
-title('Output allocated carriers, GNURadio');
-grid on;
-hold on;
-plot(imag(gnuradioData),'-r');
-hold off;
-
-figure;
-plot(real(dFrames));
-title('CALCULATED frame');
-grid on;
-hold on;
-plot(imag(dFrames),'-r');
-hold off;
-
-figure;
-plot(abs(dFrames-gnuradioData));
-title('Comparison gnuradio calculated FRAMES');
-ylim([-1 1]);
-
+plot(abs(ifftSig-gnuradioSamp));
+title('Gnuradio vs calculated comparison');
+% ylim([-1 1]);
 
