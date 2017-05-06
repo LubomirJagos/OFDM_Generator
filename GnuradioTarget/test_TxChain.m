@@ -3,16 +3,13 @@
 %
 clear all; close all;
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%   Input parameters.
 %
-%   Create modulators.
-%
-headMod = comm.BPSKModulator('PhaseOffset', pi);
-payloadMod = comm.QPSKModulator('PhaseOffset', 3/4*pi, 'BitInput', true);
-
 fs = 200e3;
 fftLen = 64;
 packetLen = 96;
-nProcessPackets = 5;
+nProcessPackets = 4;
 occupiedCarriers = [39:43 45:57 59:64 2:7 9:21 23:27];  % <-------- It has to be this way, don't change order, otherwise it's not giving right results!
 pilotCarriers = [44 58 8 22];
 pilotSymbols = [1 1 1 -1];
@@ -21,12 +18,20 @@ sync2 = [0, 0, 0, 0, 0, 0, -1, -1, -1, -1, 1, 1, -1, -1, -1, 1, -1, 1, 1, 1, 1, 
 
 nSymbols = ceil(packetLen/length(occupiedCarriers));
 
-dataIn = [];
-f = fopen('_test_mod_randseq_1.txt','r');
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%   Create modulators.
+%
+headMod = comm.BPSKModulator('PhaseOffset', pi);
+payloadMod = comm.QPSKModulator('PhaseOffset', 3/4*pi, 'BitInput', true);
 
+tic;
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%   Generovanie packetov
+%
+f = fopen('_test_mod_randseq_1.txt','r');
+dataIn = [];
 dPackets = [];
 dFrames = [];
-
 for j = 1:nProcessPackets
     dataIn = fread(f,packetLen,'uint8')';
 
@@ -45,27 +50,25 @@ release(headMod);
 release(payloadMod);
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%   POZOR MODULACIOU SA MENI DLZKA PAKETOV!
+%
 %   Gnuradio seka packety po novej dlzke packetov: 
 %       (length(modHeader)+length(modPayload))
 %
 %   potom vlozi synchronizacnu postupnost
 %
+dFrames = allocateCarriers(         ...
+    dPackets,                       ...
+    fftLen,                         ...
+    length(packet),                 ...
+    nProcessPackets,                ...
+    occupiedCarriers,               ...
+    pilotCarriers,                  ...
+    pilotSymbols,                   ...
+    sync1,                          ...
+    sync2);
 
-dFrames = [];
-for k = 1:length(packet):nProcessPackets*length(packet)
-    frame = allocateCarriers(           ...
-        dPackets(k:k+length(packet)-1), ...
-        fftLen,                         ...
-        packetLen,                      ...
-        nProcessPackets,                ...
-        occupiedCarriers,               ...
-        pilotCarriers,                  ...
-        pilotSymbols,                   ...
-        sync1,                          ...
-        sync2);
-    dFrames = [dFrames frame];
-end
-
+benchmark = toc
 %
 %   Debug checking diff btw. muxed stream in gnuradio and calculated in
 %   matlab

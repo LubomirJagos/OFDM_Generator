@@ -50,7 +50,7 @@ while (nProcessPackets > 0 && ~dataEnd)
         if (count == nCarriers)
             needToRead = needToRead - count;
         else
-            dataIn = [dataIn zeros(1,nCarriers-count-1)];
+            dataIn = [dataIn zeros(1,nCarriers-count)];
             needToRead = 0;
         end
         fftFrame = zeros(1,fftLen);
@@ -58,7 +58,8 @@ while (nProcessPackets > 0 && ~dataEnd)
         fftFrame(pilotCarriers) = pilotSymbols;
         fftFrame = circshift(fftFrame', floor(fftLen/2))';
         frame = [frame fftFrame];
-    end        
+    end
+    frame = [frame sync1 sync2];
     nProcessPackets = nProcessPackets-1;
 end
 
