@@ -7,30 +7,20 @@ clear all; close all;
 %   Input parameters.
 %
 fs = 200e3;
-fftLen = 128;
+fftLen = 64;
 cpLen = 16;
-packetLen = 96;    
-nProcessPackets = 2;
+packetLen = 96;
+nProcessPackets = 42;
 
-%(range(-26, -21) + range(-20,-7) + range(-6, 0) + range(1,7) + range(8, 21) + range(22, 27),)
-%occupiedCarriers = [39:43 45:57 59:64 2:7 9:21 23:27];  % <-------- It has to be this way, don't change order, otherwise it's not giving right results!
-
-%(range(-26, -21) + range(-6, 0) + range(8, 21) + range(22, 27),)
-%occupiedCarriers = [39:43 59:64 9:21 23:27];
-
-%(range(-26, -21) + range(8, 21) + range(22, 27),)
-% occupiedCarriers = [39:43 9:21 23:27];
-
-%(range(-30, -25) + range(8, 21) + range(24, 30),)
-occupiedCarriers = [33:43 45:57 59:64 1:7 9:21 23:100];
-
+% occupiedCarriers = [39:43 45:57 59:64 2:7 9:21 23:27];  % <-------- It has to be this way, don't change order, otherwise it's not giving right results!
+%occupiedCarriers = [33:42 45:57 62:64 3:6 10:21 23:28];
+%occupiedCarriers = [35:39 45:57 59:64 2:7 9:21 27:31];
+occupiedCarriers = [39:43 59:64 9:21 23:27];
 
 pilotCarriers = [44 58 8 22];
 pilotSymbols = [1 1 1 -1];
 sync1 = [0., 0., 0., 0., 0., 0., 0., 1.41421356, 0., -1.41421356, 0., 1.41421356, 0., -1.41421356, 0., -1.41421356, 0., -1.41421356, 0., 1.41421356, 0., -1.41421356, 0., 1.41421356, 0., -1.41421356, 0., -1.41421356, 0., -1.41421356, 0., -1.41421356, 0., 1.41421356, 0., -1.41421356, 0., 1.41421356, 0., 1.41421356, 0., 1.41421356, 0., -1.41421356, 0., 1.41421356, 0., 1.41421356, 0., 1.41421356, 0., -1.41421356, 0., 1.41421356, 0., 1.41421356, 0., 1.41421356, 0., 0., 0., 0., 0., 0.];
 sync2 = [0, 0, 0, 0, 0, 0, -1, -1, -1, -1, 1, 1, -1, -1, -1, 1, -1, 1, 1, 1, 1, 1, -1, -1, -1, -1, -1, 1, -1, -1, 1, -1, 0, 1, -1, 1, 1, 1, -1, 1, 1, 1, -1, 1, 1, 1, 1, -1, 1, -1, -1, -1, 1, -1, 1, -1, -1, -1, -1, 0, 0, 0, 0, 0];
-% sync1 = [sync1 sync1];
-% sync2 = [sync2 sync2]
 
 nSymbols = ceil(packetLen/length(occupiedCarriers));
 
@@ -40,38 +30,42 @@ nSymbols = ceil(packetLen/length(occupiedCarriers));
 headMod = comm.BPSKModulator('PhaseOffset', pi);
 payloadMod = comm.QPSKModulator('PhaseOffset', 3/4*pi, 'BitInput', true);
 
-tic;
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %   Generovanie packetov
 %
-f = fopen('block_tests_files/ofdm_sig_in.txt','r');
+f = fopen('volacka.wav','r');
 dataIn = [];
 dPackets = [];
 dFrames = [];
-for j = 1:nProcessPackets
-    dataIn = fread(f,packetLen,'uint8')';
-%     dataIn = randi(255,1,packetLen)
 
+tic;    %benchmark
+for j = 1:nProcessPackets
+%       dataIn = fread(f,packetLen,'uint8')';
+%       dataIn = double(dataIn);
+      
+    dataIn = randi(255,1,packetLen);
+
+%     txStr = uint8(' Pozmenil som nosne nech vidim ci to funguje aj s menej. blablablablabla ahoj');
+%     txStr = [txStr 10]; %newline
+%     txStr = [txStr randi([65 90],1,packetLen-length(txStr))];
+%     dataIn = double(txStr);
+%     dataIn = dataIn(1:packetLen);
+    
     header = generateHeader(packetLen+4,j-1);       %plus 4 because there is CRC added in payload
     payload = de2bi(generatePayload(dataIn), 8)';
     payload = reshape(payload,1,numel(payload));
 
     modHeader = step(headMod, header')';
-    
-        %debug LuboJ
-        modHeader = [modHeader(1:48) zeros(1,80)];
-        %%%%nezabudnut! zmazat
-    
     modPayload = step(payloadMod, payload')';
     packet = [modHeader modPayload];
     dPackets = [dPackets packet];
 end
-
-mySig = dPackets;
+packetGenBenchmark = toc;
 
 fclose(f);
 release(headMod);
 release(payloadMod);
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %   POZOR MODULACIOU SA MENI DLZKA PAKETOV!
 %
@@ -95,34 +89,35 @@ benchmark = toc
 
 ifftSig = []
 for k = 1:fftLen:fftLen*nProcessPackets
-    ifftChunk = ifft(ifftshift(dFrames(k:k+fftLen-1))).*fftLen;
+    ifftChunk = ifft(ifftshift(dFrames(k:k+fftLen-1))) .* fftLen;
     ifftSig = [ifftSig ifftChunk(end-cpLen+1:end) ifftChunk];
 end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%%%%%%%%%%%%%%%% Results comparison with Gnuradio %%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%% Transmit generated signal %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-f = fopen('block_tests_files/ofdm_sig_out.txt','r');
-gnuradioSamp = arrayToComplex(fread(f,2*length(mySig),'float32')');    % <----- pozor normovanie!!
-fclose(f);
+% f = fopen('_ofdm_signal_tx.txt');
+% ifftSig = arrayToComplex(fread(f,20e3,'float32')');
+% fclose(f);
 
-figure;
-plot(real(mySig));
-title('Calculated signal');
-hold on;
-plot(imag(mySig));
-hold off;
+ifftSig = 1i.*real(ifftSig) + imag(ifftSig);
+ifftSig = ifftSig .* 0.05;
 
-figure;
-plot(real(gnuradioSamp));
-title('Gnuradio output signals');
-hold on;
-plot(imag(gnuradioSamp));
-hold off;
+Tx = comm.SDRuTransmitter(...
+  'Platform','N200/N210/USRP2',...
+  'IPAddress', '192.168.10.2', ...
+  'CenterFrequency', 2.45e9, ...
+  'InterpolationFactor', 250,  ...
+  'Gain', 0    ...
+);
+hMod = comm.DPSKModulator('BitInput',true);
 
-figure;
-plot(abs(mySig-gnuradioSamp));
-title('Gnuradio vs calculated comparison');
-% ylim([-1 1]);
+for counter = 1:2000
+  disp('Transmitting seq. num. ');
+  counter
+  step(Tx, ifftSig');
+end
+
+release(Tx);
 
