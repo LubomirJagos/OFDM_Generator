@@ -22,7 +22,7 @@ function varargout = main(varargin)
 
 % Edit the above text to modify the response to help main
 
-% Last Modified by GUIDE v2.5 05-May-2017 04:44:55
+% Last Modified by GUIDE v2.5 08-May-2017 04:06:15
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -43,6 +43,9 @@ else
 end
 % End initialization code - DO NOT EDIT
 
+% LuboJ., add gnuradio functions
+addpath('GnuradioTarget');
+
 % --- Executes just before main is made visible.
 function main_OpeningFcn(hObject, eventdata, handles, varargin)
 % This function has no output args, see OutputFcn.
@@ -58,8 +61,9 @@ handles.output = hObject;
 %   LuboJ. 6.11.2016
 %set panels invisible, only default one OFDM.
 handles.data.activePanel = 'ofdmWavePanel';
-set(handles.ofdmWavePanel,'visible','on')
+set(handles.ofdmWavePanel,'visible','on');
 set(handles.deviceSettingsPanel, 'visible','off');
+set(handles.signalOutputPanel, 'visible','off');
 
 handles.lw410 = LW410Interface();
 handles.ofdm.dataInputMethod = 'randsrc';
@@ -109,6 +113,7 @@ function ofdmBut_Callback(hObject, eventdata, handles)
 handles.data.activePanel = 'ofdmWavePanel';
 set(handles.ofdmWavePanel,'visible','on')
 set(handles.deviceSettingsPanel, 'visible','off');
+set(handles.signalOutputPanel, 'visible','off');
 
 guidata(hObject, handles);  %how to obtain data
 
@@ -120,7 +125,8 @@ function deviceSetingsBut_Callback(hObject, eventdata, handles)
 % handles    structure with handles and user data (see GUIDATA)
 handles.data.activePanel = 'deviceSettingsPanel';   %set semaphor
 set(handles.deviceSettingsPanel, 'visible','on');
-set(handles.ofdmWavePanel,'visible','off')
+set(handles.ofdmWavePanel,'visible','off');
+set(handles.signalOutputPanel,'visible','off');
 
 guidata(hObject, handles);  %how to obtain data
 
@@ -130,54 +136,67 @@ function generateOFDMWaveBut_Callback(hObject, eventdata, handles)
 % hObject    handle to generateOFDMWaveBut (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
+handles.data.activePanel = 'signalOutputPanel';   %set semaphor
+set(handles.deviceSettingsPanel, 'visible','off');
+set(handles.ofdmWavePanel,'visible','off');
+set(handles.signalOutputPanel,'visible','on');
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% USRP Transmission
+% OFDM generating
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-% % 
-% % for counter = 1:20
-% %   data = randi([0 1], 30, 1);
-% %   modSignal = step(hMod, data);
-% % end
-% % 
-
-handles.usrp.interp = str2double(get(handles.editUsrpInterp, 'string'))
-handles.lw410.fs = 100e6/handles.usrp.interp; %zatial napevno!
-fs = handles.lw410.fs;      %NEZABUDNUT NASTAVOVAT!
-
+%--------------------------------------------------------------------------
+% Setting sample rate (default 400kHz)
+%--------------------------------------------------------------------------
 deviceType = 0;
-if (get(handles.usrpDevice, 'Value') == 1) deviceType = 1; end;
-if (get(handles.lw410Device, 'Value') == 1) deviceType = 2; end;
+fs = str2double(get(handles.noDeviceSampleRate, 'string'))*1000;
+
+if (get(handles.usrpDevice, 'Value') == 1)
+    fs = str2double(get(handles.USRPSampleRate, 'string'))*1000;
+    deviceType = 1;
+end;
+if (get(handles.lw410Device, 'Value') == 1)
+    fs = handles.lw410.fs;
+    deviceType = 2;
+end;
+fs              %output to command window
 
 %--------------------------------------------------------------------------
 % READING DATA FOR GENERATING WAVES FROM GUI by LuboJ.
 %--------------------------------------------------------------------------
 signalAmplitude = str2double(get(handles.editSignalAmplitude, 'string'))
-'Signal amplitude set to: '
-signalAmplitude
-
 ifftLen = str2double(get(handles.ifftLen, 'string'))
-numSymbols = str2double(get(handles.numOfSymbolsInput, 'string'))
-
-oversampleFactor = str2double(get(handles.oversamplingInput, 'string'));
+nSymbols = str2double(get(handles.numOfSymbolsInput, 'string'))
+oversampleFactor = str2double(get(handles.oversamplingInput, 'string'))
 fc = str2double(get(handles.carrierFreqInput, 'string'))*1e3
                                                              
 insertPrefixInterval= get(handles.intervalRadio, 'Value');
+guardLength = eval(get(handles.guardLengthInput, 'string'))  %This is array[rows cols]
+if (isempty(guardLength))
+    guardLeft = [];
+    guardRight = [];
+else
+    guardLeft = zeros(guardLength(1),1);
+    guardRight = zeros(guardLength(2),2);;
+end
 cpLen = str2double(get(handles.prefixLengthInput, 'string'))
-guardLength = eval(get(handles.guardLengthInput, 'string'));  %This is array[rows cols]
+txGain = str2double(get(handles.txGain, 'string'))
+
+packetLen = str2double(get(handles.packetLen, 'string'))
 
 %
 %   Typ modulacie
 %
+packetHeadModTypeList = get(handles.packetHeadModType,'String');
+packetHeadModType = packetHeadModTypeList;%packetHeadModTypeList{get(handles.packetHeadModTypeList, 'Value')}
 
 modTypeList = get(handles.modulationTypePopup,'String');
-modType = modTypeList{get(handles.modulationTypePopup, 'Value')}
-if (strcmp(modType, 'QPSK'))
+payloadModType = modTypeList{get(handles.modulationTypePopup, 'Value')}
+if (strcmp(payloadModType, 'QPSK'))
     M = 4
-elseif (strcmp(modType, 'pi/4 DQPSK'))
+elseif (strcmp(payloadModType, 'pi/4 DQPSK'))
     M = 4
-elseif (strcmp(modType, '16QAM'))
+elseif (strcmp(payloadModType, '16QAM'))
     M = 16
 else
     M = 0
@@ -188,41 +207,30 @@ handles.modM = M;  %setting for GUI
 %
 %   Nastavenie pilotnych tonov.
 %
-pilotTonesPositions = eval(get(handles.pilotTonesPositions, 'string'));
-pilotTonesAmplitudes = eval(get(handles.pilotTonesAmplitudes, 'string'));
-numPilots = length(pilotTonesPositions);
+occupiedCarriers = eval(get(handles.occupiedCarriers, 'string'));
+nCarriers = length(occupiedCarriers);       %alias pre lahsi pristup
+for k = 1:length(occupiedCarriers)
+    if (occupiedCarriers(k) <= 0)
+        occupiedCarriers(k) = ifftLen + 1 - occupiedCarriers(k);
+    else
+        occupiedCarriers(k) = 1 + occupiedCarriers(k);
+    end
+end
+
+pilotCarriers = eval(get(handles.pilotTonesPositions, 'string'));
+for k = 1:length(pilotCarriers)
+    if (pilotCarriers(k) <= 0)
+        pilotCarriers(k) = ifftLen + 1 - pilotCarriers(k);
+    else
+        pilotCarriers(k) = 1 + pilotCarriers(k);
+    end
+end
+pilotSymbols = eval(get(handles.pilotSymbols, 'string'));
+
+numPilots = length(pilotCarriers);
 usePilots = 0;
 if (numPilots > 0)
     usePilots = 1;
-end
-
-%
-%   Head data, reading as binary from file.
-%
-numHeadData = 0;
-if (handles.ofdm.headData == 1)
-    f = fopen(handles.ofdm.headFile,'r')
-    headData = abs(fread(f,'bit1'));
-    fclose(f);
-    numHeadData = length(headData)/log2(M)
-    % headData
-    handles.ofdm.headDataIn.String = num2str(numHeadData);  %update GUI values
-    
-    %
-    %   Head data clipping.
-    %
-    if (numHeadData > ifftLen)
-        numHeadDataOld = numHeadData;
-        headData = headData(1:ifftLen/2,1);
-        numHeadData = length(headData)/log2(M)
-%        set(handles.statusText, 'String', ...
-disp(...
-            horzcat(    ...
-                'Clipping head data from ', ...
-                num2str(numHeadDataOld*8),'bits to ', ...
-                num2str(numHeadData),'bits' ...
-            ));
-    end
 end
 
 %
@@ -238,72 +246,70 @@ if (strcmp(handles.ofdm.dataInputMethod,'randsrc'))
 elseif (strcmp(handles.ofdm.dataInputMethod,'user'))
     dataSourceType = 1;
     data_source = eval(get(handles.seqInput, 'string'));
-    data_source_aux = [];
-    for i = 1:length(data_source)
-        if (data_source(i) == 0) data_source_aux = [data_source_aux 0 0];
-        elseif (data_source(i) == 1) data_source_aux = [data_source_aux 0 1];
-        elseif (data_source(i) == 2) data_source_aux = [data_source_aux 1 0];
-        elseif (data_source(i) == 3) data_source_aux = [data_source_aux 1 1];
-        end
-    end
-    data_source = data_source_aux;
-    %need to do reshape
 elseif (strcmp(handles.ofdm.dataInputMethod,'file'))
     dataSourceType = 2;
-    dataSourceFileInfo = dir(handles.ofdm.file)
-    dataSourceFile = fopen(handles.ofdm.file, 'r')
-elseif (strcmp(handles.ofdm.dataInputMethod,'gnuradio'))
-    dataSourceType = 3;
     dataSourceFileInfo = dir(handles.ofdm.file)
     dataSourceFile = fopen(handles.ofdm.file, 'r')
 end
 
 %
 %   Vytvorenie modulatoru
-%       handles.hModulator
+%       handles.payloadMod
+%       handles.packetHeadMod
 %
 clear modulated_data;
-if (strcmp(modType, 'QPSK'))
-    handles.hModulator =  comm.QPSKModulator('BitInput',true,'SymbolMapping','Binary');
-    %LuboJ. !!!
-    %set(handles.hModulator,'BitInput',false);
-elseif (strcmp(modType, 'pi/4 DQPSK'))
-    handles.hModulator =  comm.DQPSKModulator(pi/4, 'BitInput', true);
-elseif (strcmp(modType, '16QAM'))
-    handles.hModulator = comm.RectangularQAMModulator(16,'BitInput',true);
+if (strcmp(payloadModType, 'QPSK'))
+    payloadMod = comm.QPSKModulator('PhaseOffset', 3/4*pi, 'BitInput', true);
+elseif (strcmp(payloadModType, 'pi/4 DQPSK'))
+elseif (strcmp(payloadModType, '16QAM'))
+end
+handles.payloadMod = payloadMod;
+
+enablePackets = get(handles.enablePackets,'value');
+if (enablePackets)
+        packetHeadMod = comm.BPSKModulator('PhaseOffset', pi);
+%     if (strcmp(packetHeadModType, 'BPSK'))
+%         packetHeadMod = comm.BPSKModulator('PhaseOffset', pi);
+%     end
+    sync1 = eval(get(handles.sync1, 'string'));
+    sync2 = eval(get(handles.sync2, 'string'));
+    packetLen = str2double(get(handles.packetLen,'string'));
 end
 
-%  Vypocet pociatku cyklickeho prefixu
-cpStart = (ifftLen-cpLen)*oversampleFactor
-
 %   Nastavenie parametrov podla GUI.
-awgnLevel = str2double(get(handles.awgnLevel, 'string'));
 if (get(handles.noChannelRadio, 'Value') == 1)
     useChannelModel = 0;
 elseif (get(handles.awgnRadio, 'Value') == 1)
     useChannelModel = 1;
+    awgnLevel = str2double(get(handles.awgnLevel, 'string'));
 elseif (get(handles.rayleighRadio, 'Value') == 1)
-    maxDoplerShift = str2double(get(handles.doplerShiftIn, 'string'));
     useChannelModel = 2;
+    maxDoplerShift = str2double(get(handles.doplerShiftIn, 'string'));
     channelModel = rayleighchan(1/fs, maxDoplerShift);
 elseif (get(handles.ricianRadio, 'Value') == 1)
     useChannelModel = 3;    
 end
 
 % USRP inicializacia
-
 if (deviceType == 1)
     Tx = comm.SDRuTransmitter(...
       'IPAddress', '192.168.10.2', ...
       'CenterFrequency', fc, ...
-      'InterpolationFactor', handles.usrp.interp);
+      'InterpolationFactor', floor(100e6/fs), ...
+      'Gain', txGain);
 end
 
-nfor = str2double(get(handles.editTxCycleCount, 'string'))      %defaultne 100krat prebehne tx
+nfor = str2num(get(handles.editTxCycleCount,'String'));
 benchmark = zeros(1,nfor);         %meranie rychlosti
 cyclicGeneration = 1;
-dataLen = (ifftLen-numHeadData-numPilots)*numSymbols*log2(M);
-dataLenMem = dataLen;
+
+if (enablePackets)
+    dataLen = packetLen*nSymbols;   %in this case nSymbols is packet count
+else
+    dataLen = nCarriers*nSymbols*log2(M);
+    sync1 = [];
+    sync2 = [];
+end
 while (cyclicGeneration == 1)
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     %   Jadro, OFDM modulator
@@ -318,137 +324,82 @@ while (cyclicGeneration == 1)
         %       0 = randi
         %       1 = user defined array
         %       2 = file
-        %       3 = gnuradio file
         %
         if (dataSourceType == 0)
-            data_source = randi([0 1], (ifftLen-numHeadData-numPilots)*log2(M), numSymbols);    
-%            data_source = floor(100.*rand((numCarriers-numHeadData-numPilots)*log2(M), numSymbols));    
-        elseif (dataSourceType == 2 || dataSourceType == 3)
-            if (dataSourceType == 2)                                            %normal file
-                data_source = fread(dataSourceFile, dataLen*log2(M), 'ubit1');
-            else                                                                %gnuradio file (float32 for real, float32 for imag)
-                dataLen = dataLenMem/log2(M);
-                data_source = double(fread(dataSourceFile, dataLen*2, 'float32'));
-                if (mod(length(data_source),2) == 1) data_source = data_source(1:end-1); end
-                data_source = reshape(data_source, length(data_source)/2, 2);
-                data_source = data_source(:,1) + 1i*data_source(:,2);
+            if (enablePackets)
+                data_source = randi(255,dataLen,1);
+            else
+                data_source = randi([0 1],dataLen,1);
+            end
+        elseif (dataSourceType == 2)
+            %reading samples from file, packets means read bytes, otherwise read raw bits
+            if (enablePackets)
+                data_source = fread(dataSourceFile, dataLen, 'uint8');
+            else
+                data_source = fread(dataSourceFile, dataLen, 'ubit1');
             end
             
-            if (feof(dataSourceFile))                                           %check if start from beginning of file
+            if (feof(dataSourceFile))            %check if start from beginning of file
                 fseek(dataSourceFile,0,'bof');
             end
             
             %check if enough bits was read, if no, zeros are added in the end
             if (length(data_source) < dataLen)      
                 data_source = [data_source; zeros(dataLen-length(data_source),1)];
-            end
-            
-            if (dataSourceType == 3)                                            %gnuradio sample file, there is already modulation
-                data_source = reshape(data_source, (ifftLen-numHeadData-numPilots), numSymbols);
-            else                                                                %normal sample generation
-                data_source = reshape(data_source, (ifftLen-numHeadData-numPilots)*log2(M), numSymbols);
-            end
-        end
-        handles.data.seqData = data_source; %for LW410 output
-        
-        %
-        %   Head data insertion, from file, data are inserted before
-        %   payload.
-        %   
-        if (handles.ofdm.headData == 1)
-            data_source = vertcat(repmat(headData,1,numSymbols), data_source);
+            end            
         end
         
-        %
-        %   MODULATION
-        %
-        if (dataSourceType == 3)                             %gnuradio file, already modulated
-            modulated_data = signalAmplitude .* data_source;
-        else                                                 %normal modulation
-            data_source = reshape(data_source, (ifftLen-numPilots)*numSymbols*log2(M), 1);                
-            modulated_data = signalAmplitude * step(handles.hModulator, data_source);
-        end
-        data_matrix = reshape(modulated_data, (ifftLen-numPilots), numSymbols);        
-        
-        %
-        % PILOTS INSERTION
-        %
-        % Carriers order - index:
-        % array index |  frequency bin
-        %   1         =  DC
-        %   2         =  1st       carrier
-        %             .
-        %             .
-        %   N/2       =  fs/2      carrier
-        %   N/2 + 1   = -fs/2 + df carrier
-        %             .
-        %             .
-        %   N         =  fs        carrier
-        %
-        %   Pilots are inserted between carriers to right positions.
-        %   Carriers around them are shifted.
-        %
-        if (usePilots)
-            data_matrix_aux = zeros(ifftLen,numSymbols);
-            j = 1;
-            for k = 1:ifftLen
-                pilotPos = find(pilotTonesPositions==k);
-                if (isempty(pilotPos) && k > ifftLen/2)
-                    pilotPos = find(pilotTonesPositions== -(k-ifftLen/2));
-                end
-                if (pilotPos)
-                    data_matrix_aux(k,:) = pilotTonesAmplitudes(pilotPos);
-                else
-                    data_matrix_aux(k,:) = data_matrix(j,:);
-                    j = j+1;
-                end
-            end
-            data_matrix = data_matrix_aux;
-        end            
-        %data_matrix
-        
-        %
-        % Upsampling, in the end data are MULTIPLIED TO CONSERVE ENERGY
-        %
-        if (oversampleFactor ~= 1)
-            ifft_data = ifft( ...
-                    [data_matrix(1:end/2,:); ...
-                    zeros((oversampleFactor-1)*ifftLen, numSymbols); ...
-                    data_matrix(end/2+1:end,:)], ...
-                    oversampleFactor*ifftLen) * oversampleFactor;
-        else
-            ifft_data = ifft(data_matrix,ifftLen);
-        end
-        
-        %
-        % Prefix/Guard interval insertion
-        %
-        if (insertPrefixInterval == 1)
-            if (cpLen > 0)
-                ifft_data = vertcat(ifft_data(cpStart+1:end,:), ifft_data);
-            end
-            if (guardLength(1) == 0)
-                ifft_data = vertcat( ...
-                    ifft_data, ...
-                    zeros(guardLength(2)*oversampleFactor, numSymbols));
-            elseif (guardLength(2) == 0)
-                ifft_data = vertcat( ...
-                    zeros(guardLength(1)*oversampleFactor, numSymbols), ...
-                    ifft_data);
-            else
-                ifft_data = vertcat( ...
-                    zeros(guardLength(1)*oversampleFactor, numSymbols), ...
-                    ifft_data, ...
-                    zeros(guardLength(2)*oversampleFactor, numSymbols));
-            end
-                
-        end
-        
-        %
-        %   Serialization
-        %
-        ofdm_signal = reshape(ifft_data, numel(ifft_data), 1);
+        if (enablePackets)
+            modulated_data = [];
+            for k = 1:packetLen:dataLen-packetLen
+                dataIn = data_source(k:k+packetLen-1);
 
+                header = generateHeader(packetLen+4,(nfor-1)*nSymbols+k-1);       %plus 4 because there is CRC added in payload    
+                headerLen = 8*floor(nCarriers/8);
+                header = [header zeros(1,headerLen-length(header))];
+                header = header(1:headerLen)';
+
+                payload = de2bi(generatePayload(dataIn'), 8)';
+                payload = reshape(payload,numel(payload),1);        %there is conversion from bytes --> bits inside! that's why reshape
+
+                modHeader = step(packetHeadMod, header);    
+                modPayload = step(payloadMod, payload);
+                modulated_data = [modulated_data; modHeader; modPayload];
+            end
+            packetLen = length(modulated_data)/nSymbols;           %recount length of packet (there is now payload with CRC and header with CRC)
+        else
+            modulated_data = step(payloadMod, data_source);
+            packetLen = nCarriers;
+        end
+
+        frames = allocateCarriers(         ...
+            modulated_data',                ...
+            ifftLen,                        ...
+            packetLen,                      ...
+            nSymbols,                       ...
+            occupiedCarriers,               ...
+            pilotCarriers,                  ...
+            pilotSymbols,                   ...
+            sync1,                          ...
+            sync2)';
+        packetLen = length(frames)/nSymbols;        %renew packetLen
+        
+        ofdm_signal = [];
+        for k = 1:ifftLen:packetLen*nSymbols-ifftLen
+            ifftChunk = ifft(ifftshift(frames(k:k+ifftLen-1))) ./ ifftLen * signalAmplitude;
+
+            %
+            % Prefix/Guard interval insertion
+            %
+            if (insertPrefixInterval == 1)
+                if (cpLen > 0)
+                    ofdm_signal = [ofdm_signal; guardLeft; ifftChunk(end-cpLen+1:end); ifftChunk; guardRight];
+                else
+                    ofdm_signal = [ofdm_signal; guardLeft; ifftChunk; guardRight];
+                end
+            end
+        end
+                
         %
         %   USRP Tx
         %
@@ -507,12 +458,12 @@ while (cyclicGeneration == 1)
     title('OFDM signal');
     xlabel('sample[-]');
     ylabel('A[V]');
-    plot(linspace(0,handles.lw410.fs,length(ofdm_signal)), real(ofdm_signal));
-    hold on; plot(linspace(0,handles.lw410.fs,length(ofdm_signal)), imag(ofdm_signal),'r'); hold off;
+    plot(linspace(0,fs,length(ofdm_signal)), real(ofdm_signal));
+    hold on; plot(linspace(0,fs,length(ofdm_signal)), imag(ofdm_signal),'r'); hold off;
     
-    plot(linspace(0,handles.lw410.fs,length(ofdm_signal)), real(ofdm_signal));
+    plot(linspace(0,fs,length(ofdm_signal)), real(ofdm_signal));
     title('OFDM signal in time domain');
-    hold on; plot(linspace(0,handles.lw410.fs,length(ofdm_signal)), imag(ofdm_signal),'r'); hold off;
+    hold on; plot(linspace(0,fs,length(ofdm_signal)), imag(ofdm_signal),'r'); hold off;
     grid on;
     xlabel('t[s]'); ylabel('A[V]');
 
@@ -524,7 +475,7 @@ while (cyclicGeneration == 1)
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
     sigSpec = 20*log10(abs(fft(ofdm_signal, 2048))./2048);
-    minX = -handles.lw410.fs/2;               %VYPOCET FREKVENCNEJ OSI PRE ZOBRAZENIE!
+    minX = -fs/2;               %VYPOCET FREKVENCNEJ OSI PRE ZOBRAZENIE!
                                                 %SKONTROLOVAT!
     maxX = -minX;
     xAxis = linspace(minX, maxX, 2048).*1e-3;
@@ -532,7 +483,7 @@ while (cyclicGeneration == 1)
     axes(handles.ofdmWaveAxes4);
     sigSpecNoisy = 20*log10(abs(fft(ofdm_signal_noisy, 2048))./2048);
     plot(xAxis, fftshift(sigSpecNoisy));
-    ylim([-100 0]);
+    ylim([floor(min(sigSpecNoisy)/10)*10 ceil(max(sigSpecNoisy)/10)*10]);
     xlim([xAxis(1) xAxis(end)]);
     hold on;
     plot(xAxis,fftshift(sigSpec), '--r')
@@ -1026,11 +977,11 @@ function showConstellationBut_Callback(hObject, eventdata, handles)
 modTypeList = get(handles.modulationTypePopup,'String');
 modType = modTypeList{get(handles.modulationTypePopup, 'Value')}
 if (strcmp(modType, 'QPSK'))
-    handles.hModulator.constellation;
+    handles.payloadMod.constellation;
 elseif (strcmp(modType, 'pi/4 DQPSK'))
     % NO CONSTELLATION
 elseif (strcmp(modType, '16QAM'))
-    handles.hModulator.constellation;
+    handles.payloadMod.constellation;
 end
 
 
@@ -1183,18 +1134,18 @@ end
 
 
 
-function pilotTonesAmplitudes_Callback(hObject, eventdata, handles)
-% hObject    handle to pilotTonesAmplitudes (see GCBO)
+function pilotSymbols_Callback(hObject, eventdata, handles)
+% hObject    handle to pilotSymbols (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 
-% Hints: get(hObject,'String') returns contents of pilotTonesAmplitudes as text
-%        str2double(get(hObject,'String')) returns contents of pilotTonesAmplitudes as a double
+% Hints: get(hObject,'String') returns contents of pilotSymbols as text
+%        str2double(get(hObject,'String')) returns contents of pilotSymbols as a double
 
 
 % --- Executes during object creation, after setting all properties.
-function pilotTonesAmplitudes_CreateFcn(hObject, eventdata, handles)
-% hObject    handle to pilotTonesAmplitudes (see GCBO)
+function pilotSymbols_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to pilotSymbols (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    empty - handles not created until after all CreateFcns called
 
@@ -1473,3 +1424,245 @@ function guardLengthInput_CreateFcn(hObject, eventdata, handles)
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
     set(hObject,'BackgroundColor','white');
 end
+
+
+% --- Executes on button press in signalOutputBut.
+function signalOutputBut_Callback(hObject, eventdata, handles)
+% hObject    handle to signalOutputBut (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+handles.data.activePanel = 'signalOutputPanel';   %set semaphor
+set(handles.deviceSettingsPanel, 'visible','off');
+set(handles.ofdmWavePanel,'visible','off');
+set(handles.signalOutputPanel,'visible','on');
+
+% --- Executes on button press in showOfdmWaveAxes3But.
+function showOfdmWaveAxes3But_Callback(hObject, eventdata, handles)
+% hObject    handle to showOfdmWaveAxes3But (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+
+% --- Executes on button press in dataInputUserRadio.
+function dataInputUserRadio_Callback(hObject, eventdata, handles)
+% hObject    handle to dataInputUserRadio (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hint: get(hObject,'Value') returns toggle state of dataInputUserRadio
+
+
+
+function occupiedCarriers_Callback(hObject, eventdata, handles)
+% hObject    handle to occupiedCarriers (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hints: get(hObject,'String') returns contents of occupiedCarriers as text
+%        str2double(get(hObject,'String')) returns contents of occupiedCarriers as a double
+
+
+% --- Executes during object creation, after setting all properties.
+function occupiedCarriers_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to occupiedCarriers (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+% Hint: edit controls usually have a white background on Windows.
+%       See ISPC and COMPUTER.
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end
+
+
+
+function sync1_Callback(hObject, eventdata, handles)
+% hObject    handle to sync1 (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hints: get(hObject,'String') returns contents of sync1 as text
+%        str2double(get(hObject,'String')) returns contents of sync1 as a double
+
+
+% --- Executes during object creation, after setting all properties.
+function sync1_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to sync1 (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+% Hint: edit controls usually have a white background on Windows.
+%       See ISPC and COMPUTER.
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end
+
+
+
+function sync2_Callback(hObject, eventdata, handles)
+% hObject    handle to sync2 (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hints: get(hObject,'String') returns contents of sync2 as text
+%        str2double(get(hObject,'String')) returns contents of sync2 as a double
+
+
+% --- Executes during object creation, after setting all properties.
+function sync2_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to sync2 (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+% Hint: edit controls usually have a white background on Windows.
+%       See ISPC and COMPUTER.
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end
+
+
+% --- Executes on button press in enablePackets.
+function enablePackets_Callback(hObject, eventdata, handles)
+% hObject    handle to enablePackets (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hint: get(hObject,'Value') returns toggle state of enablePackets
+if (get(hObject,'Value') == 1)
+    set(handles.symbolLengthLabel,'String', 'Number of packets');
+
+    set(handles.packetHeadModType,'Enable', 'on');
+    set(handles.packetLen,'Enable', 'on');
+    set(handles.sync1,'Enable', 'on');
+    set(handles.sync2,'Enable', 'on');
+else
+    set(handles.symbolLengthLabel,'String', 'Number of symbols');
+
+    set(handles.packetHeadModType,'Enable', 'off');
+    set(handles.packetLen,'Enable', 'off');
+    set(handles.sync1,'Enable', 'off');
+    set(handles.sync2,'Enable', 'off');
+end
+
+
+function packetLen_Callback(hObject, eventdata, handles)
+% hObject    handle to packetLen (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hints: get(hObject,'String') returns contents of packetLen as text
+%        str2double(get(hObject,'String')) returns contents of packetLen as a double
+
+
+% --- Executes during object creation, after setting all properties.
+function packetLen_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to packetLen (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+% Hint: edit controls usually have a white background on Windows.
+%       See ISPC and COMPUTER.
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end
+
+
+
+function USRPSampleRate_Callback(hObject, eventdata, handles)
+% hObject    handle to USRPSampleRate (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hints: get(hObject,'String') returns contents of USRPSampleRate as text
+%        str2double(get(hObject,'String')) returns contents of USRPSampleRate as a double
+
+
+% --- Executes during object creation, after setting all properties.
+function USRPSampleRate_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to USRPSampleRate (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+% Hint: edit controls usually have a white background on Windows.
+%       See ISPC and COMPUTER.
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end
+
+
+
+function noDeviceSampleRate_Callback(hObject, eventdata, handles)
+% hObject    handle to noDeviceSampleRate (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hints: get(hObject,'String') returns contents of noDeviceSampleRate as text
+%        str2double(get(hObject,'String')) returns contents of noDeviceSampleRate as a double
+
+
+% --- Executes during object creation, after setting all properties.
+function noDeviceSampleRate_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to noDeviceSampleRate (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+% Hint: edit controls usually have a white background on Windows.
+%       See ISPC and COMPUTER.
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end
+
+
+% --- Executes on selection change in packetHeadModType.
+function packetHeadModType_Callback(hObject, eventdata, handles)
+% hObject    handle to packetHeadModType (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hints: contents = cellstr(get(hObject,'String')) returns packetHeadModType contents as cell array
+%        contents{get(hObject,'Value')} returns selected item from packetHeadModType
+
+
+% --- Executes during object creation, after setting all properties.
+function packetHeadModType_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to packetHeadModType (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+% Hint: popupmenu controls usually have a white background on Windows.
+%       See ISPC and COMPUTER.
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end
+
+
+
+function txGain_Callback(hObject, eventdata, handles)
+% hObject    handle to txGain (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hints: get(hObject,'String') returns contents of txGain as text
+%        str2double(get(hObject,'String')) returns contents of txGain as a double
+
+
+% --- Executes during object creation, after setting all properties.
+function txGain_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to txGain (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+% Hint: edit controls usually have a white background on Windows.
+%       See ISPC and COMPUTER.
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end
+
+
+% --- Executes on button press in intervalNotusedRadio.
+function intervalNotusedRadio_Callback(hObject, eventdata, handles)
+% hObject    handle to intervalNotusedRadio (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hint: get(hObject,'Value') returns toggle state of intervalNotusedRadio

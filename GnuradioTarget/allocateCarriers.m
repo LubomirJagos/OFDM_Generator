@@ -1,5 +1,5 @@
 function frame = allocateCarriers(  ...
-    data,                         ...
+    data,                           ...
     fftLen,                         ...
     packetLen,                      ...
     nProcessPackets,                ...
@@ -19,12 +19,12 @@ function frame = allocateCarriers(  ...
 % sync2 = [0, 0, 0, 0, 0, 0, -1, -1, -1, -1, 1, 1, -1, -1, -1, 1, -1, 1, 1, 1, 1, 1, -1, -1, -1, -1, -1, 1, -1, -1, 1, -1, 0, 1, -1, 1, 1, 1, -1, 1, 1, 1, -1, 1, 1, 1, 1, -1, 1, -1, -1, -1, 1, -1, 1, -1, -1, -1, -1, 0, 0, 0, 0, 0];
 
 nCarriers = length(occupiedCarriers);
-nSymbols = ceil(packetLen/nCarriers);
 
+frame = [];
 readIndex = 1;
-frame = [sync1 sync2];
 dataEnd = false;
 while (nProcessPackets > 0 && ~dataEnd)
+    frame = [frame sync1 sync2];
     needToRead = packetLen;
     while (needToRead > 0 && ~dataEnd)
         
@@ -59,7 +59,6 @@ while (nProcessPackets > 0 && ~dataEnd)
         fftFrame = circshift(fftFrame', floor(fftLen/2))';
         frame = [frame fftFrame];
     end
-    frame = [frame sync1 sync2];
     nProcessPackets = nProcessPackets-1;
 end
 

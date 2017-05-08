@@ -9,10 +9,12 @@ clear all; close all;
 
 fftLen = 64;
 packetLen = 96;
-cpLen = 16;
-nProcessPackets = 22;
+cpLen = fftLen/4;
+nProcessPackets = 10;
 sync1 = [0., 0., 0., 0., 0., 0., 0., 1.41421356, 0., -1.41421356, 0., 1.41421356, 0., -1.41421356, 0., -1.41421356, 0., -1.41421356, 0., 1.41421356, 0., -1.41421356, 0., 1.41421356, 0., -1.41421356, 0., -1.41421356, 0., -1.41421356, 0., -1.41421356, 0., 1.41421356, 0., -1.41421356, 0., 1.41421356, 0., 1.41421356, 0., 1.41421356, 0., -1.41421356, 0., 1.41421356, 0., 1.41421356, 0., 1.41421356, 0., -1.41421356, 0., 1.41421356, 0., 1.41421356, 0., 1.41421356, 0., 0., 0., 0., 0., 0.];
 sync2 = [0, 0, 0, 0, 0, 0, -1, -1, -1, -1, 1, 1, -1, -1, -1, 1, -1, 1, 1, 1, 1, 1, -1, -1, -1, -1, -1, 1, -1, -1, 1, -1, 0, 1, -1, 1, 1, 1, -1, 1, 1, 1, -1, 1, 1, 1, 1, -1, 1, -1, -1, -1, 1, -1, 1, -1, -1, -1, -1, 0, 0, 0, 0, 0];
+% sync1 = [sync1 sync1];
+% sync2 = [sync2 sync2];
 
 %
 %   It has to be this way, same order as in python don't change it,
@@ -35,8 +37,6 @@ pilotCarriers = [ ...
     1+21          ...
 ];
 pilotSymbols = [1 1 1 -1];
-
-nSymbols = ceil(packetLen/length(occupiedCarriers));
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %   Create modulators.
@@ -69,6 +69,7 @@ for j = 1:nProcessPackets
     packet = [modHeader modPayload];
     dPackets = [dPackets packet];
 end
+packetLen = length(packet);
 
 % mySig = dPackets;
 
@@ -93,13 +94,14 @@ dFrames = allocateCarriers(         ...
     pilotSymbols,                   ...
     sync1,                          ...
     sync2);
+packetLen = length(dFrames)/nProcessPackets;
 
 benchmark = toc
 
 % mySig = dFrames;
 
 ifftSig = []
-for k = 1:fftLen:fftLen*nProcessPackets
+for k = 1:fftLen:packetLen*nProcessPackets
     ifftChunk = ifft(ifftshift(dFrames(k:k+fftLen-1))).*fftLen;
     ifftSig = [ifftSig ifftChunk(end-cpLen+1:end) ifftChunk];
 end
