@@ -9,15 +9,6 @@ function frame = allocateCarriers(  ...
     sync1,                          ...
     sync2)
 
-% fftLen = 64;
-% packetLen = 96;
-% nProcessPackets = 1;
-% occupiedCarriers = [39:43 45:57 59:64 2:7 9:21 23:27];  % <-------- It has to be this way, don't change order, otherwise it's not giving right results!
-% pilotCarriers = [44 58 8 22];
-% pilotSymbols = [10 10 10 -10];
-% sync1 = [0., 0., 0., 0., 0., 0., 0., 1.41421356, 0., -1.41421356, 0., 1.41421356, 0., -1.41421356, 0., -1.41421356, 0., -1.41421356, 0., 1.41421356, 0., -1.41421356, 0., 1.41421356, 0., -1.41421356, 0., -1.41421356, 0., -1.41421356, 0., -1.41421356, 0., 1.41421356, 0., -1.41421356, 0., 1.41421356, 0., 1.41421356, 0., 1.41421356, 0., -1.41421356, 0., 1.41421356, 0., 1.41421356, 0., 1.41421356, 0., -1.41421356, 0., 1.41421356, 0., 1.41421356, 0., 1.41421356, 0., 0., 0., 0., 0., 0.];
-% sync2 = [0, 0, 0, 0, 0, 0, -1, -1, -1, -1, 1, 1, -1, -1, -1, 1, -1, 1, 1, 1, 1, 1, -1, -1, -1, -1, -1, 1, -1, -1, 1, -1, 0, 1, -1, 1, 1, 1, -1, 1, 1, 1, -1, 1, 1, 1, 1, -1, 1, -1, -1, -1, 1, -1, 1, -1, -1, -1, -1, 0, 0, 0, 0, 0];
-
 nCarriers = length(occupiedCarriers);
 
 frame = [];
@@ -55,7 +46,9 @@ while (nProcessPackets > 0 && ~dataEnd)
         end
         fftFrame = zeros(1,fftLen);
         fftFrame(occupiedCarriers) = dataIn;
-        fftFrame(pilotCarriers) = pilotSymbols;
+        if (~isempty(pilotCarriers))
+            fftFrame(pilotCarriers) = pilotSymbols;
+        end
         fftFrame = circshift(fftFrame', floor(fftLen/2))';
         frame = [frame fftFrame];
     end

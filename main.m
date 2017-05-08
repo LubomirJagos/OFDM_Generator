@@ -22,7 +22,7 @@ function varargout = main(varargin)
 
 % Edit the above text to modify the response to help main
 
-% Last Modified by GUIDE v2.5 08-May-2017 04:06:15
+% Last Modified by GUIDE v2.5 08-May-2017 11:35:24
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -177,7 +177,7 @@ if (isempty(guardLength))
     guardRight = [];
 else
     guardLeft = zeros(guardLength(1),1);
-    guardRight = zeros(guardLength(2),2);;
+    guardRight = zeros(guardLength(2),1);
 end
 cpLen = str2double(get(handles.prefixLengthInput, 'string'))
 txGain = str2double(get(handles.txGain, 'string'))
@@ -211,7 +211,7 @@ occupiedCarriers = eval(get(handles.occupiedCarriers, 'string'));
 nCarriers = length(occupiedCarriers);       %alias pre lahsi pristup
 for k = 1:length(occupiedCarriers)
     if (occupiedCarriers(k) <= 0)
-        occupiedCarriers(k) = ifftLen + 1 - occupiedCarriers(k);
+        occupiedCarriers(k) = ifftLen + 1 + occupiedCarriers(k);
     else
         occupiedCarriers(k) = 1 + occupiedCarriers(k);
     end
@@ -245,7 +245,7 @@ if (strcmp(handles.ofdm.dataInputMethod,'randsrc'))
     dataSourceType = 0;
 elseif (strcmp(handles.ofdm.dataInputMethod,'user'))
     dataSourceType = 1;
-    data_source = eval(get(handles.seqInput, 'string'));
+    data_source = eval(get(handles.seqInput, 'string'))';
 elseif (strcmp(handles.ofdm.dataInputMethod,'file'))
     dataSourceType = 2;
     dataSourceFileInfo = dir(handles.ofdm.file)
@@ -274,7 +274,10 @@ if (enablePackets)
     sync1 = eval(get(handles.sync1, 'string'));
     sync2 = eval(get(handles.sync2, 'string'));
     packetLen = str2double(get(handles.packetLen,'string'));
+else
+    packetLen = nCarriers;
 end
+packetLenOriginal = packetLen;
 
 %   Nastavenie parametrov podla GUI.
 if (get(handles.noChannelRadio, 'Value') == 1)
@@ -292,8 +295,9 @@ end
 
 % USRP inicializacia
 if (deviceType == 1)
+    usrpIp = get(handles.USRPIPaddr, 'string');
     Tx = comm.SDRuTransmitter(...
-      'IPAddress', '192.168.10.2', ...
+      'IPAddress', usrpIp, ...
       'CenterFrequency', fc, ...
       'InterpolationFactor', floor(100e6/fs), ...
       'Gain', txGain);
@@ -310,12 +314,15 @@ else
     sync1 = [];
     sync2 = [];
 end
+
 while (cyclicGeneration == 1)
+    
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     %   Jadro, OFDM modulator
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         
     for cycleCnt = 1:1:nfor
+        packetLen = packetLenOriginal;
         disp(horzcat('generate samples, step ',num2str(cycleCnt)));
         tic;
         
@@ -351,7 +358,7 @@ while (cyclicGeneration == 1)
         
         if (enablePackets)
             modulated_data = [];
-            for k = 1:packetLen:dataLen-packetLen
+            for k = 1:packetLen:dataLen-packetLen+1
                 dataIn = data_source(k:k+packetLen-1);
 
                 header = generateHeader(packetLen+4,(nfor-1)*nSymbols+k-1);       %plus 4 because there is CRC added in payload    
@@ -385,7 +392,7 @@ while (cyclicGeneration == 1)
         packetLen = length(frames)/nSymbols;        %renew packetLen
         
         ofdm_signal = [];
-        for k = 1:ifftLen:packetLen*nSymbols-ifftLen
+        for k = 1:ifftLen:packetLen*nSymbols-ifftLen+1
             ifftChunk = ifft(ifftshift(frames(k:k+ifftLen-1))) ./ ifftLen * signalAmplitude;
 
             %
@@ -474,14 +481,14 @@ while (cyclicGeneration == 1)
     % Signal after channel
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-    sigSpec = 20*log10(abs(fft(ofdm_signal, 2048))./2048);
+    sigSpec = 20*log10(abs(fft(ofdm_signal, 512))./512);
     minX = -fs/2;               %VYPOCET FREKVENCNEJ OSI PRE ZOBRAZENIE!
                                                 %SKONTROLOVAT!
     maxX = -minX;
-    xAxis = linspace(minX, maxX, 2048).*1e-3;
+    xAxis = linspace(minX, maxX, 512).*1e-3;
 
     axes(handles.ofdmWaveAxes4);
-    sigSpecNoisy = 20*log10(abs(fft(ofdm_signal_noisy, 2048))./2048);
+    sigSpecNoisy = 20*log10(abs(fft(ofdm_signal_noisy, 512))./512);
     plot(xAxis, fftshift(sigSpecNoisy));
     ylim([floor(min(sigSpecNoisy)/10)*10 ceil(max(sigSpecNoisy)/10)*10]);
     xlim([xAxis(1) xAxis(end)]);
@@ -717,7 +724,7 @@ elseif (get(handles.dataInputFileRadio, 'Value') == 1)
     handles.ofdm.dataInputMethod = 'file';
     [fileName,path] = uigetfile('','Select file with samples');
     handles.ofdm.file = horzcat(path, fileName);
-    set(handles.seqInput, 'string', horzcat(path, fileName));
+    set(handles.seqFileInput, 'string', horzcat(path, fileName));
     set(handles.statusText, 'string', horzcat('Data input from file ', path, fileName));
 elseif (get(handles.gnuradioInputFileRadio, 'Value') == 1)
     handles.ofdm.dataInputMethod = 'gnuradio';
@@ -735,8 +742,17 @@ function butExportOFDMData_Callback(hObject, eventdata, handles)
 % hObject    handle to butExportOFDMData (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
-[filePath dir] = uiputfile('mat', 'Choose output file')
-dlmwrite(horzcat(dir,filePath), handles.data.seqData, ',');
+hChildren = get(handles.ofdmWaveAxes,'Children');
+sigReal = get(hChildren(2),'YData');
+sigImag = get(hChildren(1),'YData');
+
+sigReal = sigReal(1:500);
+sigImag = sigImag(1:500);
+
+[filePath dir] = uiputfile('txt', 'Choose output file');
+f = fopen(horzcat(dir,filePath),'w');
+fwrite(f, repmat([sigReal; sigImag],1,2*length(sigReal)), 'float32');
+fclose(f);
 
 guidata(hObject, handles);
 
@@ -1666,3 +1682,72 @@ function intervalNotusedRadio_Callback(hObject, eventdata, handles)
 % handles    structure with handles and user data (see GUIDATA)
 
 % Hint: get(hObject,'Value') returns toggle state of intervalNotusedRadio
+
+
+
+function USRPIPaddr_Callback(hObject, eventdata, handles)
+% hObject    handle to USRPIPaddr (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hints: get(hObject,'String') returns contents of USRPIPaddr as text
+%        str2double(get(hObject,'String')) returns contents of USRPIPaddr as a double
+
+
+% --- Executes during object creation, after setting all properties.
+function USRPIPaddr_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to USRPIPaddr (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+% Hint: edit controls usually have a white background on Windows.
+%       See ISPC and COMPUTER.
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end
+
+
+
+function seqFileInput_Callback(hObject, eventdata, handles)
+% hObject    handle to seqFileInput (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hints: get(hObject,'String') returns contents of seqFileInput as text
+%        str2double(get(hObject,'String')) returns contents of seqFileInput as a double
+
+
+% --- Executes during object creation, after setting all properties.
+function seqFileInput_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to seqFileInput (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+% Hint: edit controls usually have a white background on Windows.
+%       See ISPC and COMPUTER.
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end
+
+
+
+function edit48_Callback(hObject, eventdata, handles)
+% hObject    handle to edit48 (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hints: get(hObject,'String') returns contents of edit48 as text
+%        str2double(get(hObject,'String')) returns contents of edit48 as a double
+
+
+% --- Executes during object creation, after setting all properties.
+function edit48_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to edit48 (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+% Hint: edit controls usually have a white background on Windows.
+%       See ISPC and COMPUTER.
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end

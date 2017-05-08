@@ -15,7 +15,8 @@ nProcessPackets = 200;
 %   It has to be this way, same order as in python don't change it,
 %   otherwise it's not giving right results!
 %
-%(range(-60,-52) + range(-50, -20) + range(-10,-9) + range(24, 60),)
+%(range(-26,-21) + range(-20,-7) + range(-6,0) + range(1,7) + range(8,21) + range(22,27),)
+%[39:43 45:57 59:64 2:7 9:21 23:27]
 occupiedCarriers = [ ...
     (fftLen+1-26):(fftLen-21) ...
     (fftLen+1-20):(fftLen-7) ...
