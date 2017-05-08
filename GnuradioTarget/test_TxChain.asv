@@ -6,35 +6,41 @@ clear all; close all;
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %   Input parameters.
 %
-
-fftLen = 64;
-packetLen = 96;
+fs = 200e3;
+fftLen = 256;
 cpLen = 16;
-nProcessPackets = 22;
+packetLen = 96;    
+nProcessPackets = 4;
+
+%(range(-26, -21) + range(-20,-7) + range(-6, 0) + range(1,7) + range(8, 21) + range(22, 27),)
+%occupiedCarriers = [39:43 45:57 59:64 2:7 9:21 23:27];  % <-------- 
+
+%(range(-26, -21) + range(-6, 0) + range(8, 21) + range(22, 27),)
+%occupiedCarriers = [39:43 59:64 9:21 23:27];
+
+%(range(-26, -21) + range(8, 21) + range(22, 27),)
+% occupiedCarriers = [39:43 9:21 23:27];
+
+%(range(-50, -20) + range(-10,-9) + range(24, 60),)
+occupiedCarriers = [ ...
+    (fftLen+1-50):(fftLen-20) ...
+    (fftLen+1-10):(fftLen-9) ...
+    1+24:60 ...
+];
+
+% pilotCarriers = (-18,-15,16,19);
+pilotCarriers = [ ...
+    (fftLen+1-18) ...
+    (fftLen+1-15) ...
+    17 ...
+    20             ...
+];
+pilotSymbols = [-1 -2 -3 -4];
+
 sync1 = [0., 0., 0., 0., 0., 0., 0., 1.41421356, 0., -1.41421356, 0., 1.41421356, 0., -1.41421356, 0., -1.41421356, 0., -1.41421356, 0., 1.41421356, 0., -1.41421356, 0., 1.41421356, 0., -1.41421356, 0., -1.41421356, 0., -1.41421356, 0., -1.41421356, 0., 1.41421356, 0., -1.41421356, 0., 1.41421356, 0., 1.41421356, 0., 1.41421356, 0., -1.41421356, 0., 1.41421356, 0., 1.41421356, 0., 1.41421356, 0., -1.41421356, 0., 1.41421356, 0., 1.41421356, 0., 1.41421356, 0., 0., 0., 0., 0., 0.];
 sync2 = [0, 0, 0, 0, 0, 0, -1, -1, -1, -1, 1, 1, -1, -1, -1, 1, -1, 1, 1, 1, 1, 1, -1, -1, -1, -1, -1, 1, -1, -1, 1, -1, 0, 1, -1, 1, 1, 1, -1, 1, 1, 1, -1, 1, 1, 1, 1, -1, 1, -1, -1, -1, 1, -1, 1, -1, -1, -1, -1, 0, 0, 0, 0, 0];
-
-%
-%   It has to be this way, same order as in python don't change it,
-%   otherwise it's not giving right results!
-%
-%(range(-26,-21) + range(-20,-7) + range(-6, 0) + range(1,7) + range(8,21) + range(22,27),)
-occupiedCarriers = [ ...
-    (fftLen+1-26):(fftLen-21) ...
-    (fftLen+1-20):(fftLen-7) ...
-    (fftLen+1-6):(fftLen-0) ...
-    1+1:7 ...
-    1+8:21 ...
-    1+22:27 ...
-];
-% pilotCarriers = (-51,-18,-15,16,19);
-pilotCarriers = [ ...
-    (fftLen+1-21) ...
-    (fftLen+1-7) ...
-    1+7          ...
-    1+21          ...
-];
-pilotSymbols = [1 1 1 -1];
+sync1 = [sync1 sync1 sync1 sync1];
+sync2 = [sync2 sync2 sync2 sync2];
 
 nSymbols = ceil(packetLen/length(occupiedCarriers));
 
@@ -57,10 +63,7 @@ for j = 1:nProcessPackets
 %     dataIn = randi(255,1,packetLen)
 
     header = generateHeader(packetLen+4,j-1);       %plus 4 because there is CRC added in payload    
-    headerLen = 8*floor(length(occupiedCarriers)/8);
-    header = [header zeros(1,headerLen-length(header))];
-    header = header(1:headerLen);
-    
+    header = [header zeros(1,8*floor(length(occupiedCarriers)/8)-length(header))];
     payload = de2bi(generatePayload(dataIn), 8)';
     payload = reshape(payload,1,numel(payload));
 
@@ -96,7 +99,7 @@ dFrames = allocateCarriers(         ...
 
 benchmark = toc
 
-% mySig = dFrames;
+mySig = dFrames;
 
 ifftSig = []
 for k = 1:fftLen:fftLen*nProcessPackets
@@ -104,7 +107,7 @@ for k = 1:fftLen:fftLen*nProcessPackets
     ifftSig = [ifftSig ifftChunk(end-cpLen+1:end) ifftChunk];
 end
 
-mySig = ifftSig;
+% mySig = ifftSig;
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%% Results comparison with Gnuradio %%%%%%%%%%%%%%%%%%%%%%%%
