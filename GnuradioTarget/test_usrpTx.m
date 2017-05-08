@@ -82,6 +82,7 @@ for j = 1:nProcessPackets
     else
         txStr = uint8(' Tak zvysok 0. Toz Konecna. Viavt UREL 2017! Hurray, good bye by LuboJ. >D');
     end
+
     txStr = [txStr 10]; %newline
     txStr = [txStr randi([65 90],1,packetLen-length(txStr))];
     dataIn = double(txStr);

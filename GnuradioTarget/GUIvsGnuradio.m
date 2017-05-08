@@ -1,14 +1,63 @@
 %
 %   LuboJ.
 %
+close all
+clear all
 
-f2 = fopen('block_tests_files/ofdm_sig_outGUI.txt','r');
-mySig = arrayToComplex(fread(f2,420,'float32')');    % <----- pozor normovanie!!
+nRead = 5000;
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+f2 = fopen('GnuradioTarget/block_tests_files/ofdm_sig_outGUI.txt','r');
+if (f2 == -1)
+    f2 = fopen('block_tests_files/ofdm_sig_outGUI.txt','r');
+end
+mySig = arrayToComplex(fread(f2,2*nRead,'float32')');
 fclose(f2);
 
-f = fopen('block_tests_files/ofdm_sig_out.txt','r');
-gnuradioSamp = arrayToComplex(fread(f,2*length(mySig),'float32')');    % <----- pozor normovanie!!
+%mySig = 1i*real(mySig) + imag(mySig);
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% f2 = fopen('GnuradioTarget/block_tests_files/ofdm_sig_outScript.txt','r');
+% if (f2 == -1)
+%     f2 = fopen('block_tests_files/ofdm_sig_outScript.txt','r');
+% end
+% mySig = arrayToComplex(fread(f2,nRead,'float32')');
+% fclose(f2);
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+if (nRead > length(mySig))
+    nRead = length(mySig);
+end
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+f = fopen('GnuradioTarget/block_tests_files/ofdm_sig_outScript.txt','r');
+if (f == -1)
+    f = fopen('block_tests_files/ofdm_sig_outScript.txt','r');
+end
+gnuradioSamp = arrayToComplex(fread(f,2*nRead,'float32')');
 fclose(f);
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% f = fopen('block_tests_files/ofdm_sig_out.txt','r');
+% if (f == -1)
+%     f = fopen('GnuradioTarget/block_tests_files/ofdm_sig_out.txt','r');
+% end
+% gnuradioSamp = arrayToComplex(fread(f,2*nRead,'float32')');    % <----- pozor normovanie!!
+% fclose(f);
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% index = 10;
+% mySig = mySig*gnuradioSamp(index)/mySig(index);
 
 figure;
 plot(real(mySig));

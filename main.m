@@ -22,7 +22,7 @@ function varargout = main(varargin)
 
 % Edit the above text to modify the response to help main
 
-% Last Modified by GUIDE v2.5 08-May-2017 11:35:24
+% Last Modified by GUIDE v2.5 08-May-2017 21:31:13
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -176,8 +176,8 @@ if (isempty(guardLength))
     guardLeft = [];
     guardRight = [];
 else
-    guardLeft = zeros(guardLength(1),1);
-    guardRight = zeros(guardLength(2),1);
+    guardLeft = zeros(guardLength(1),nSymbols);
+    guardRight = zeros(guardLength(2),nSymbols);
 end
 cpLen = str2double(get(handles.prefixLengthInput, 'string'))
 txGain = str2double(get(handles.txGain, 'string'))
@@ -220,7 +220,7 @@ end
 pilotCarriers = eval(get(handles.pilotTonesPositions, 'string'));
 for k = 1:length(pilotCarriers)
     if (pilotCarriers(k) <= 0)
-        pilotCarriers(k) = ifftLen + 1 - pilotCarriers(k);
+        pilotCarriers(k) = ifftLen + 1 + pilotCarriers(k);
     else
         pilotCarriers(k) = 1 + pilotCarriers(k);
     end
@@ -246,6 +246,11 @@ if (strcmp(handles.ofdm.dataInputMethod,'randsrc'))
 elseif (strcmp(handles.ofdm.dataInputMethod,'user'))
     dataSourceType = 1;
     data_source = eval(get(handles.seqInput, 'string'))';
+    data_source = cellstr(data_source');
+    data_source = data_source{1};
+    data_source = [data_source randi([32 126],1,packetLen-length(data_source)-1) 10]';
+    data_source = double(data_source);
+    data_source = repmat(data_source(1:packetLen),nSymbols,1);
 elseif (strcmp(handles.ofdm.dataInputMethod,'file'))
     dataSourceType = 2;
     dataSourceFileInfo = dir(handles.ofdm.file)
@@ -294,9 +299,11 @@ elseif (get(handles.ricianRadio, 'Value') == 1)
 end
 
 % USRP inicializacia
+
 if (deviceType == 1)
     usrpIp = get(handles.USRPIPaddr, 'string');
     Tx = comm.SDRuTransmitter(...
+      'Platform','N200/N210/USRP2',...
       'IPAddress', usrpIp, ...
       'CenterFrequency', fc, ...
       'InterpolationFactor', floor(100e6/fs), ...
@@ -306,6 +313,7 @@ end
 nfor = str2num(get(handles.editTxCycleCount,'String'));
 benchmark = zeros(1,nfor);         %meranie rychlosti
 cyclicGeneration = 1;
+loopCounter = 0;
 
 if (enablePackets)
     dataLen = packetLen*nSymbols;   %in this case nSymbols is packet count
@@ -316,20 +324,25 @@ else
 end
 
 while (cyclicGeneration == 1)
+    loopCounter = loopCounter+1;
     
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     %   Jadro, OFDM modulator
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         
-    for cycleCnt = 1:1:nfor
+        %
+        %   debug
+        df1 = fopen('GnuradioTarget\block_tests_files\ofdm_sig_outGUI.txt','w');
+        %
+
         packetLen = packetLenOriginal;
-        disp(horzcat('generate samples, step ',num2str(cycleCnt)));
         tic;
         
         %
         %   DATA SOURCE, READING DATA
         %       0 = randi
-        %       1 = user defined array
+        %       1 = user input
+        %               - if packet enabled using as string message
         %       2 = file
         %
         if (dataSourceType == 0)
@@ -338,6 +351,11 @@ while (cyclicGeneration == 1)
             else
                 data_source = randi([0 1],dataLen,1);
             end
+        elseif (dataSourceType == 1)
+%             DO NOTHING, MESSAGE ALREADY SET BEFORE
+%             if (enablePackets == 1)
+%             else
+%             end
         elseif (dataSourceType == 2)
             %reading samples from file, packets means read bytes, otherwise read raw bits
             if (enablePackets)
@@ -358,10 +376,12 @@ while (cyclicGeneration == 1)
         
         if (enablePackets)
             modulated_data = [];
+            o = 0;
             for k = 1:packetLen:dataLen-packetLen+1
-                dataIn = data_source(k:k+packetLen-1);
+                dataIn = double(data_source(k:k+packetLen-1));
 
-                header = generateHeader(packetLen+4,(nfor-1)*nSymbols+k-1);       %plus 4 because there is CRC added in payload    
+                header = generateHeader(packetLen+4,o);       %plus 4 because there is CRC added in payload    
+                o = o + 1;
                 headerLen = 8*floor(nCarriers/8);
                 header = [header zeros(1,headerLen-length(header))];
                 header = header(1:headerLen)';
@@ -379,6 +399,8 @@ while (cyclicGeneration == 1)
             packetLen = nCarriers;
         end
 
+        %until here OK.
+        
         frames = allocateCarriers(         ...
             modulated_data',                ...
             ifftLen,                        ...
@@ -390,23 +412,38 @@ while (cyclicGeneration == 1)
             sync1,                          ...
             sync2)';
         packetLen = length(frames)/nSymbols;        %renew packetLen
-        
+        frames = conj(frames);      %why??????
+
+        %all looks OK. before I sought one bad allocated frame, probably
+        %due some input error, recheck!
+
+%         frames = ifft(ifftshift(reshape(frames,packetLen,nSymbols)));
+%         if (insertPrefixInterval == 1)
+%             if (cpLen > 0)
+%                 ofdm_signal = [guardLeft; frames(end-cpLen+1:end,:); frames; guardRight];
+%             else
+%                 ofdm_signal = [guardLeft; frames; guardRight];
+%             end
+%             ofdm_signal = reshape(ofdm_signal,numel(ofdm_signal),1);
+%         end
+%         ofdm_signal = ofdm_signal .* ifftLen .* signalAmplitude;
+
         ofdm_signal = [];
         for k = 1:ifftLen:packetLen*nSymbols-ifftLen+1
-            ifftChunk = ifft(ifftshift(frames(k:k+ifftLen-1))) ./ ifftLen * signalAmplitude;
+            ifftChunk = ifft(ifftshift(frames(k:k+ifftLen-1))) .* ifftLen;
 
             %
             % Prefix/Guard interval insertion
             %
             if (insertPrefixInterval == 1)
                 if (cpLen > 0)
-                    ofdm_signal = [ofdm_signal; guardLeft; ifftChunk(end-cpLen+1:end); ifftChunk; guardRight];
+                    ofdm_signal = [ofdm_signal; ifftChunk(end-cpLen+1:end); ifftChunk];
                 else
                     ofdm_signal = [ofdm_signal; guardLeft; ifftChunk; guardRight];
                 end
             end
         end
-                
+                       
         %
         %   USRP Tx
         %
@@ -424,17 +461,38 @@ while (cyclicGeneration == 1)
         
         %
         %   Transmission
-        %        
-        if (deviceType == 1)
-            step(Tx, ofdm_signal_noisy);
+        %
+
+        %Signal already conjugate somewhere on the way! NOT USED!
+        %
+        %ofdm_signal_noisy = 1i.*real(ofdm_signal)+imag(ofdm_signal);
+
+        ofdm_signal_noisy = ofdm_signal_noisy .* signalAmplitude;
+        if (deviceType == 1)            
+            for cycleCnt = 1:1:nfor    
+                disp(horzcat('generate samples, step ',num2str(cycleCnt)));
+                step(Tx, ofdm_signal_noisy);
+            end
         end
         
         %
         %   Benchmark
         %
-        benchmark(cycleCnt+1) = toc;       %meranie casu vypoctu
-    end
+
+    benchmark(cycleCnt+1) = toc;       %meranie casu vypoctu
     
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    %   Debuging part only
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+        %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+        %   DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG
+        dSigReal = real(ofdm_signal_noisy);
+        dSigImag = imag(ofdm_signal_noisy);
+        fwrite(df1, reshape([dSigReal dSigImag]',1,2*length(dSigReal)), 'float32');
+        %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+    fclose(df1);
+
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     %   Interactive part
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -459,7 +517,9 @@ while (cyclicGeneration == 1)
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     %   Signal in time plot
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
+     ofdm_signal = ofdm_signal(1:1024);
+     ofdm_signal_noisy = ofdm_signal_noisy(1:1024);
+    
     axes(handles.ofdmWaveAxes);
     plot(zeros(1,ifftLen));
     title('OFDM signal');
@@ -468,11 +528,14 @@ while (cyclicGeneration == 1)
     plot(linspace(0,fs,length(ofdm_signal)), real(ofdm_signal));
     hold on; plot(linspace(0,fs,length(ofdm_signal)), imag(ofdm_signal),'r'); hold off;
     
-    plot(linspace(0,fs,length(ofdm_signal)), real(ofdm_signal));
+    timeAxis_ms = [1:length(ofdm_signal)]*1/fs*1000;
+    plot(timeAxis_ms, real(ofdm_signal));
+    xlim([timeAxis_ms(1) timeAxis_ms(end)]);
     title('OFDM signal in time domain');
-    hold on; plot(linspace(0,fs,length(ofdm_signal)), imag(ofdm_signal),'r'); hold off;
+%     hold on; plot(linspace(0,fs,length(ofdm_signal)), imag(ofdm_signal),'r'); hold off;
+    hold on; plot(timeAxis_ms, imag(ofdm_signal),'r'); hold off;
     grid on;
-    xlabel('t[s]'); ylabel('A[V]');
+    xlabel('t[ms]'); ylabel('A[V]');
 
     disp('Energia OFDM signalu (dBm)');
     10*log10(sum(abs(ofdm_signal).^2))
@@ -490,12 +553,16 @@ while (cyclicGeneration == 1)
     axes(handles.ofdmWaveAxes4);
     sigSpecNoisy = 20*log10(abs(fft(ofdm_signal_noisy, 512))./512);
     plot(xAxis, fftshift(sigSpecNoisy));
+
     ylim([floor(min(sigSpecNoisy)/10)*10 ceil(max(sigSpecNoisy)/10)*10]);
     xlim([xAxis(1) xAxis(end)]);
+
     hold on;
     plot(xAxis,fftshift(sigSpec), '--r')
     hold off;
-    if (useChannelModel == 1)
+    if (useChannelModel == 0)
+        title('Bandwidth signal spectrum'); xlabel('f[kHz]'); ylabel('A[dBm]');
+    elseif (useChannelModel == 1)
         title('Signal after AWGN channel'); xlabel('f[kHz]'); ylabel('A[dBm]');
     elseif (useChannelModel == 2)
         title('Signal after rayleigh channel'); xlabel('f[Hz]'); ylabel('A[dBm]');
@@ -545,10 +612,16 @@ if (dataSourceType == 2)
     fclose(dataSourceFile);
 end
 
+if (deviceType == 1)
+    release(Tx);
+end
+release(packetHeadMod);
+release(payloadMod);
+handles.data.seqData = data_source; %for LW410 output
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %       KONIEC GENEROVANIA
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-handles.data.seqData = data_source; %for LW410 output
 
 %
 %   For DEBUGGING only!
@@ -1751,3 +1824,20 @@ function edit48_CreateFcn(hObject, eventdata, handles)
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
     set(hObject,'BackgroundColor','white');
 end
+
+
+% --- Executes on button press in pushbutton26.
+function pushbutton26_Callback(hObject, eventdata, handles)
+% hObject    handle to pushbutton26 (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+
+% --- Executes on key press with focus on butSetOutput and none of its controls.
+function butSetOutput_KeyPressFcn(hObject, eventdata, handles)
+% hObject    handle to butSetOutput (see GCBO)
+% eventdata  structure with the following fields (see MATLAB.UI.CONTROL.UICONTROL)
+%	Key: name of the key that was pressed, in lower case
+%	Character: character interpretation of the key(s) that was pressed
+%	Modifier: name(s) of the modifier key(s) (i.e., control, shift) pressed
+% handles    structure with handles and user data (see GUIDATA)
