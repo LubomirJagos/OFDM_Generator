@@ -22,7 +22,7 @@ function varargout = main(varargin)
 
 % Edit the above text to modify the response to help main
 
-% Last Modified by GUIDE v2.5 08-May-2017 21:31:13
+% Last Modified by GUIDE v2.5 11-May-2017 02:23:49
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -171,6 +171,8 @@ oversampleFactor = str2double(get(handles.oversamplingInput, 'string'))
 fc = str2double(get(handles.carrierFreqInput, 'string'))*1e3
                                                              
 insertPrefixInterval= get(handles.intervalRadio, 'Value');
+insertGuardInterval= get(handles.guardRadio, 'Value');
+
 guardLength = eval(get(handles.guardLengthInput, 'string'))  %This is array[rows cols]
 if (isempty(guardLength))
     guardLeft = [];
@@ -187,19 +189,14 @@ packetLen = str2double(get(handles.packetLen, 'string'))
 %
 %   Typ modulacie
 %
-packetHeadModTypeList = get(handles.packetHeadModType,'String');
-packetHeadModType = packetHeadModTypeList;%packetHeadModTypeList{get(handles.packetHeadModTypeList, 'Value')}
-
 modTypeList = get(handles.modulationTypePopup,'String');
 payloadModType = modTypeList{get(handles.modulationTypePopup, 'Value')}
 if (strcmp(payloadModType, 'QPSK'))
     M = 4
-elseif (strcmp(payloadModType, 'pi/4 DQPSK'))
-    M = 4
-elseif (strcmp(payloadModType, '16QAM'))
-    M = 16
-else
-    M = 0
+elseif (strcmp(payloadModType, 'BPSK'))
+    M = 2
+elseif (strcmp(payloadModType, 'PSK-8'))
+    M = 3
 end
 
 handles.modM = M;  %setting for GUI
@@ -235,10 +232,15 @@ end
 
 enablePackets = get(handles.enablePackets,'value');
 if (enablePackets)
+    packetHeadModTypeList = get(handles.packetHeadModType,'String');
+    packetHeadModType = packetHeadModTypeList(get(handles.packetHeadModType, 'Value'),:);
+    if (strcmp(packetHeadModType, 'BPSK'))
         packetHeadMod = comm.BPSKModulator('PhaseOffset', pi);
-%     if (strcmp(packetHeadModType, 'BPSK'))
-%         packetHeadMod = comm.BPSKModulator('PhaseOffset', pi);
-%     end
+        packetHeadModTypeFlag = 0;
+    elseif (strcmp(packetHeadModType, 'QPSK'))
+        packetHeadMod = comm.QPSKModulator('PhaseOffset', 3/4*pi, 'BitInput',true);
+        packetHeadModTypeFlag = 1;
+    end
     sync1 = eval(get(handles.sync1, 'string'));
     sync2 = eval(get(handles.sync2, 'string'));
     packetLen = str2double(get(handles.packetLen,'string'));
@@ -281,8 +283,18 @@ end
 clear modulated_data;
 if (strcmp(payloadModType, 'QPSK'))
     payloadMod = comm.QPSKModulator('PhaseOffset', 3/4*pi, 'BitInput', true);
-elseif (strcmp(payloadModType, 'pi/4 DQPSK'))
-elseif (strcmp(payloadModType, '16QAM'))
+    payloadModType = 0;
+elseif (strcmp(payloadModType, 'BPSK'))
+    payloadMod = comm.BPSKModulator('PhaseOffset', pi);
+    payloadModType = 1;
+elseif (strcmp(payloadModType, 'PSK-8'))
+    payloadMod = comm.PSKModulator(...
+        8, ...
+        'BitInput',true, ...
+        'SymbolMapping','Custom', ...
+        'CustomSymbolMapping', [0 4 5 1 3 7 6 2]);  %gnuradio psk8 constellation
+    payloadModType = 2;
+%     payloadMod.constellation;
 end
 handles.payloadMod = payloadMod;
 
@@ -386,15 +398,35 @@ while (cyclicGeneration == 1)
 
                 header = generateHeader(packetLen+4,o);       %plus 4 because there is CRC added in payload    
                 o = o + 1;
-                headerLen = 8*floor(nCarriers/8);
+                headerLen = 8*floor(nCarriers/8);             %not documented detail that header is increasing due to carriers
                 header = [header zeros(1,headerLen-length(header))];
                 header = header(1:headerLen)';
+                
+                if (packetHeadModTypeFlag == 0)
+                    modHeader = step(packetHeadMod, header);                    %<----- BPSK modulated header
+                elseif(packetHeadModTypeFlag == 1)
+                    modHeader = conj(step(packetHeadMod,[header;zeros(length(header),1)]));  %QPSK
+                end
+                
+                if (payloadModType == 0)    %QPSK
+                    payload = de2bi(generatePayload(dataIn'), 8)';
+                    payload = reshape(payload,numel(payload),1);        %there is conversion from bytes --> bits inside! that's why reshape
+                    modPayload = conj(step(payloadMod, payload));
+                elseif(payloadModType == 1) %BPSK
+                    payload = de2bi(generatePayload(dataIn'), 8)';
+                    payload = reshape(payload,numel(payload),1);        %there is conversion from bytes --> bits inside! that's why reshape
+                    modPayload = step(payloadMod, payload);
+                elseif(payloadModType == 2) %PSK8
+                    %for gnuradio groups of 3 bits are each reversed so we
+                    %can't send just so to the modulator
+                    %here is some monster reshaping which does the same job
+                    a = de2bi(generatePayload(dataIn'),8)';
+                    b = reshape(a,1,numel(a));
+                    b = [b zeros(1,3-rem(numel(b),3))];
+                    payload = reshape(fliplr(reshape(b,3,numel(b)/3)')',1,numel(b))';
+                    modPayload = (step(payloadMod, payload));
+                end
 
-                payload = de2bi(generatePayload(dataIn'), 8)';
-                payload = reshape(payload,numel(payload),1);        %there is conversion from bytes --> bits inside! that's why reshape
-
-                modHeader = step(packetHeadMod, header);    
-                modPayload = step(payloadMod, payload);
                 modulated_data = [modulated_data; modHeader; modPayload];
             end
             packetLen = length(modulated_data)/nSymbols;           %recount length of packet (there is now payload with CRC and header with CRC)
@@ -416,7 +448,6 @@ while (cyclicGeneration == 1)
             sync1,                          ...
             sync2)';
         packetLen = length(frames)/nSymbols;        %renew packetLen
-        frames = conj(frames);      %why??????
 
         %all looks OK. before I sought one bad allocated frame, probably
         %due some input error, recheck!
@@ -439,12 +470,18 @@ while (cyclicGeneration == 1)
             %
             % Prefix/Guard interval insertion
             %
+%             if (insertPrefixInterval == 1)
+%                 if (cpLen > 0)
+%                     ofdm_signal = [ofdm_signal; guardLeft; ifftChunk(end-cpLen+1:end); ifftChunk; guardRight];
+%                 else
+%                     ofdm_signal = [ofdm_signal; guardLeft; ifftChunk; guardRight];
+%                 end
+%             end
             if (insertPrefixInterval == 1)
-                if (cpLen > 0)
-                    ofdm_signal = [ofdm_signal; guardLeft; ifftChunk(end-cpLen+1:end); ifftChunk; guardRight];
-                else
-                    ofdm_signal = [ofdm_signal; guardLeft; ifftChunk; guardRight];
-                end
+                ofdm_signal = [ofdm_signal; ifftChunk(end-cpLen+1:end); ifftChunk];
+            end
+            if (insertGuardInterval == 1)
+                ofdm_signal = [ofdm_signal; guardLeft; ifftChunk; guardRight];
             end
         end
                        
@@ -486,8 +523,8 @@ while (cyclicGeneration == 1)
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         %   DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG
-        dSigReal = real(ofdm_signal_noisy);
-        dSigImag = imag(ofdm_signal_noisy);
+        dSigReal = real(ofdm_signal);
+        dSigImag = imag(ofdm_signal);
         fwrite(df1, reshape([dSigReal dSigImag]',1,2*length(dSigReal)), 'float32');
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -788,7 +825,7 @@ function dataInputFileRadio_Callback(hObject, eventdata, handles)
 % handles    structure with handles and user data (see GUIDATA)
 
 % Hint: get(hObject,'Value') returns toggle state of dataInputFileRadio
-
+dataInputGroup_SelectionChangeFcn(hObject, eventdata, handles);
 
 % --- Executes when selected object is changed in dataInputGroup.
 function dataInputGroup_SelectionChangeFcn(hObject, eventdata, handles)
@@ -1940,4 +1977,21 @@ function butSetOutput_KeyPressFcn(hObject, eventdata, handles)
 %	Key: name of the key that was pressed, in lower case
 %	Character: character interpretation of the key(s) that was pressed
 %	Modifier: name(s) of the modifier key(s) (i.e., control, shift) pressed
+% handles    structure with handles and user data (see GUIDATA)
+
+
+% --- Executes on button press in debugCompareSignalsBut.
+function debugCompareSignalsBut_Callback(hObject, eventdata, handles)
+% hObject    handle to debugCompareSignalsBut (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+GUIvsGnuradio;
+
+
+
+% --- If Enable == 'on', executes on mouse press in 5 pixel border.
+% --- Otherwise, executes on mouse press in 5 pixel border or over dataInputFileRadio.
+function dataInputFileRadio_ButtonDownFcn(hObject, eventdata, handles)
+% hObject    handle to dataInputFileRadio (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
