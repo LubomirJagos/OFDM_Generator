@@ -1,0 +1,6 @@
+1 Prvy riadok, skusobny text OM6AKL
+2 Druhy riadok, hy riadok
+3 Toto je treti riadok
+4 Toto je riadok cislo pet
+ono je vlastne uplne jedno kolko riadkov tu je lebo sa to cita pretoze to je podla dlzky paketu a poctu paketov, takze asi tak. Signal
+sa potom zacina cyklicky opakovat!
