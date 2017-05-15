@@ -22,7 +22,7 @@ function varargout = main(varargin)
 
 % Edit the above text to modify the response to help main
 
-% Last Modified by GUIDE v2.5 08-May-2017 21:31:13
+% Last Modified by GUIDE v2.5 15-May-2017 10:11:21
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -171,13 +171,15 @@ oversampleFactor = str2double(get(handles.oversamplingInput, 'string'))
 fc = str2double(get(handles.carrierFreqInput, 'string'))*1e3
                                                              
 insertPrefixInterval= get(handles.intervalRadio, 'Value');
+insertGuardInterval= get(handles.guardRadio, 'Value');
+
 guardLength = eval(get(handles.guardLengthInput, 'string'))  %This is array[rows cols]
 if (isempty(guardLength))
     guardLeft = [];
     guardRight = [];
 else
-    guardLeft = zeros(guardLength(1),nSymbols);
-    guardRight = zeros(guardLength(2),nSymbols);
+    guardLeft = zeros(guardLength(1),1);
+    guardRight = zeros(guardLength(2),1);
 end
 cpLen = str2double(get(handles.prefixLengthInput, 'string'))
 txGain = str2double(get(handles.txGain, 'string'))
@@ -187,19 +189,14 @@ packetLen = str2double(get(handles.packetLen, 'string'))
 %
 %   Typ modulacie
 %
-packetHeadModTypeList = get(handles.packetHeadModType,'String');
-packetHeadModType = packetHeadModTypeList;%packetHeadModTypeList{get(handles.packetHeadModTypeList, 'Value')}
-
 modTypeList = get(handles.modulationTypePopup,'String');
 payloadModType = modTypeList{get(handles.modulationTypePopup, 'Value')}
 if (strcmp(payloadModType, 'QPSK'))
     M = 4
-elseif (strcmp(payloadModType, 'pi/4 DQPSK'))
-    M = 4
-elseif (strcmp(payloadModType, '16QAM'))
-    M = 16
-else
-    M = 0
+elseif (strcmp(payloadModType, 'BPSK'))
+    M = 2
+elseif (strcmp(payloadModType, 'PSK-8'))
+    M = 3
 end
 
 handles.modM = M;  %setting for GUI
@@ -210,7 +207,7 @@ handles.modM = M;  %setting for GUI
 occupiedCarriers = eval(get(handles.occupiedCarriers, 'string'));
 nCarriers = length(occupiedCarriers);       %alias pre lahsi pristup
 for k = 1:length(occupiedCarriers)
-    if (occupiedCarriers(k) <= 0)
+    if (occupiedCarriers(k) < 0)
         occupiedCarriers(k) = ifftLen + 1 + occupiedCarriers(k);
     else
         occupiedCarriers(k) = 1 + occupiedCarriers(k);
@@ -219,7 +216,7 @@ end
 
 pilotCarriers = eval(get(handles.pilotTonesPositions, 'string'));
 for k = 1:length(pilotCarriers)
-    if (pilotCarriers(k) <= 0)
+    if (pilotCarriers(k) < 0)
         pilotCarriers(k) = ifftLen + 1 + pilotCarriers(k);
     else
         pilotCarriers(k) = 1 + pilotCarriers(k);
@@ -232,6 +229,25 @@ usePilots = 0;
 if (numPilots > 0)
     usePilots = 1;
 end
+
+enablePackets = get(handles.enablePackets,'value');
+if (enablePackets)
+    packetHeadModTypeList = get(handles.packetHeadModType,'String');
+    packetHeadModType = packetHeadModTypeList(get(handles.packetHeadModType, 'Value'),:);
+    if (strcmp(packetHeadModType, 'BPSK'))
+        packetHeadMod = comm.BPSKModulator('PhaseOffset', pi);
+        packetHeadModTypeFlag = 0;
+    elseif (strcmp(packetHeadModType, 'QPSK'))
+        packetHeadMod = comm.QPSKModulator('PhaseOffset', 3/4*pi, 'BitInput',true);
+        packetHeadModTypeFlag = 1;
+    end
+    sync1 = eval(get(handles.sync1, 'string'));
+    sync2 = eval(get(handles.sync2, 'string'));
+    packetLen = str2double(get(handles.packetLen,'string'));
+else
+    packetLen = nCarriers;
+end
+packetLenOriginal = packetLen;
 
 %
 %   Source data
@@ -246,11 +262,13 @@ if (strcmp(handles.ofdm.dataInputMethod,'randsrc'))
 elseif (strcmp(handles.ofdm.dataInputMethod,'user'))
     dataSourceType = 1;
     data_source = eval(get(handles.seqInput, 'string'))';
-    data_source = cellstr(data_source');
-    data_source = data_source{1};
-    data_source = [data_source randi([32 126],1,packetLen-length(data_source)-1) 10]';
-    data_source = double(data_source);
-    data_source = repmat(data_source(1:packetLen),nSymbols,1);
+    if (enablePackets)
+        data_source = cellstr(data_source');
+        data_source = data_source{1};
+        data_source = [data_source randi([32 126],1,packetLen-length(data_source)-1) 10]';
+        data_source = double(data_source);
+        data_source = repmat(data_source(1:packetLen),nSymbols,1);
+    end
 elseif (strcmp(handles.ofdm.dataInputMethod,'file'))
     dataSourceType = 2;
     dataSourceFileInfo = dir(handles.ofdm.file)
@@ -265,24 +283,20 @@ end
 clear modulated_data;
 if (strcmp(payloadModType, 'QPSK'))
     payloadMod = comm.QPSKModulator('PhaseOffset', 3/4*pi, 'BitInput', true);
-elseif (strcmp(payloadModType, 'pi/4 DQPSK'))
-elseif (strcmp(payloadModType, '16QAM'))
+    payloadModType = 0;
+elseif (strcmp(payloadModType, 'BPSK'))
+    payloadMod = comm.BPSKModulator('PhaseOffset', pi);
+    payloadModType = 1;
+elseif (strcmp(payloadModType, 'PSK-8'))
+    payloadMod = comm.PSKModulator(...
+        8, ...
+        'BitInput',true, ...
+        'SymbolMapping','Custom', ...
+        'CustomSymbolMapping', [0 4 5 1 3 7 6 2]);  %gnuradio psk8 constellation
+    payloadModType = 2;
+%     payloadMod.constellation;
 end
 handles.payloadMod = payloadMod;
-
-enablePackets = get(handles.enablePackets,'value');
-if (enablePackets)
-        packetHeadMod = comm.BPSKModulator('PhaseOffset', pi);
-%     if (strcmp(packetHeadModType, 'BPSK'))
-%         packetHeadMod = comm.BPSKModulator('PhaseOffset', pi);
-%     end
-    sync1 = eval(get(handles.sync1, 'string'));
-    sync2 = eval(get(handles.sync2, 'string'));
-    packetLen = str2double(get(handles.packetLen,'string'));
-else
-    packetLen = nCarriers;
-end
-packetLenOriginal = packetLen;
 
 %   Nastavenie parametrov podla GUI.
 if (get(handles.noChannelRadio, 'Value') == 1)
@@ -300,7 +314,10 @@ end
 
 % USRP inicializacia
 
-if (deviceType == 1)
+if (deviceType == 0)
+    nfor = 1;
+elseif (deviceType == 1)
+    nfor = str2num(get(handles.editTxCycleCount,'String'));
     usrpIp = get(handles.USRPIPaddr, 'string');
     Tx = comm.SDRuTransmitter(...
       'Platform','N200/N210/USRP2',...
@@ -310,7 +327,6 @@ if (deviceType == 1)
       'Gain', txGain);
 end
 
-nfor = str2num(get(handles.editTxCycleCount,'String'));
 benchmark = zeros(1,nfor);         %meranie rychlosti
 cyclicGeneration = 1;
 loopCounter = 0;
@@ -336,7 +352,6 @@ while (cyclicGeneration == 1)
         %
 
         packetLen = packetLenOriginal;
-        tic;
         
         %
         %   DATA SOURCE, READING DATA
@@ -370,27 +385,51 @@ while (cyclicGeneration == 1)
             
             %check if enough bits was read, if no, zeros are added in the end
             if (length(data_source) < dataLen)      
-                data_source = [data_source; zeros(dataLen-length(data_source),1)];
+%                 data_source = [data_source; zeros(dataLen-length(data_source),1)];
+                data_source = [data_source; randi([32 92],dataLen-length(data_source),1)];
             end            
         end
         
         if (enablePackets)
             modulated_data = [];
             o = 0;
-            for k = 1:packetLen:dataLen-packetLen+1
+            for k = 1:packetLen:dataLen%-packetLen+1
                 dataIn = double(data_source(k:k+packetLen-1));
 
                 header = generateHeader(packetLen+4,o);       %plus 4 because there is CRC added in payload    
                 o = o + 1;
-                headerLen = 8*floor(nCarriers/8);
+                
+                %for fft 64 not diff btw ceil and floor
+                headerLen = 8*floor(nCarriers/8);             %not documented detail that header is increasing due to carriers
+%                 headerLen = 8*ceil(nCarriers/8);
                 header = [header zeros(1,headerLen-length(header))];
                 header = header(1:headerLen)';
+                
+                if (packetHeadModTypeFlag == 0)
+                    modHeader = step(packetHeadMod, header);                    %<----- BPSK modulated header
+                elseif(packetHeadModTypeFlag == 1)
+                    modHeader = conj(step(packetHeadMod,[header;zeros(length(header),1)]));  %QPSK
+                end
+                
+                if (payloadModType == 0)    %QPSK
+                    payload = de2bi(generatePayload(dataIn'), 8)';
+                    payload = reshape(payload,numel(payload),1);        %there is conversion from bytes --> bits inside! that's why reshape
+                    modPayload = conj(step(payloadMod, payload));
+                elseif(payloadModType == 1) %BPSK
+                    payload = de2bi(generatePayload(dataIn'), 8)';
+                    payload = reshape(payload,numel(payload),1);        %there is conversion from bytes --> bits inside! that's why reshape
+                    modPayload = step(payloadMod, payload);
+                elseif(payloadModType == 2) %PSK8
+                    %for gnuradio groups of 3 bits are each reversed so we
+                    %can't send just so to the modulator
+                    %here is some monster reshaping which does the same job
+                    a = de2bi(generatePayload(dataIn'),8)';
+                    b = reshape(a,1,numel(a));
+                    b = [b zeros(1,3-rem(numel(b),3))];
+                    payload = reshape(fliplr(reshape(b,3,numel(b)/3)')',1,numel(b))';
+                    modPayload = (step(payloadMod, payload));
+                end
 
-                payload = de2bi(generatePayload(dataIn'), 8)';
-                payload = reshape(payload,numel(payload),1);        %there is conversion from bytes --> bits inside! that's why reshape
-
-                modHeader = step(packetHeadMod, header);    
-                modPayload = step(payloadMod, payload);
                 modulated_data = [modulated_data; modHeader; modPayload];
             end
             packetLen = length(modulated_data)/nSymbols;           %recount length of packet (there is now payload with CRC and header with CRC)
@@ -412,7 +451,6 @@ while (cyclicGeneration == 1)
             sync1,                          ...
             sync2)';
         packetLen = length(frames)/nSymbols;        %renew packetLen
-        frames = conj(frames);      %why??????
 
         %all looks OK. before I sought one bad allocated frame, probably
         %due some input error, recheck!
@@ -430,23 +468,30 @@ while (cyclicGeneration == 1)
 
         ofdm_signal = [];
         for k = 1:ifftLen:packetLen*nSymbols-ifftLen+1
-            ifftChunk = ifft(ifftshift(frames(k:k+ifftLen-1))) .* ifftLen;
+            ifftChunk = ifft(ifftshift(frames(k:k+ifftLen-1))) .* ifftLen .* signalAmplitude;
 
             %
             % Prefix/Guard interval insertion
             %
+%             if (insertPrefixInterval == 1)
+%                 if (cpLen > 0)
+%                     ofdm_signal = [ofdm_signal; guardLeft; ifftChunk(end-cpLen+1:end); ifftChunk; guardRight];
+%                 else
+%                     ofdm_signal = [ofdm_signal; guardLeft; ifftChunk; guardRight];
+%                 end
+%             end
             if (insertPrefixInterval == 1)
-                if (cpLen > 0)
-                    ofdm_signal = [ofdm_signal; ifftChunk(end-cpLen+1:end); ifftChunk];
-                else
-                    ofdm_signal = [ofdm_signal; guardLeft; ifftChunk; guardRight];
-                end
+                ofdm_signal = [ofdm_signal; ifftChunk(end-cpLen+1:end); ifftChunk];
+            end
+            if (insertGuardInterval == 1)
+                ofdm_signal = [ofdm_signal; guardLeft; ifftChunk; guardRight];
             end
         end
                        
         %
         %   USRP Tx
         %
+
         if (useChannelModel == 1)
             ofdm_signal_noisy = awgn(ofdm_signal, awgnLevel, 20*log10(sum(abs(ofdm_signal))));
         elseif (useChannelModel == 2)
@@ -467,27 +512,27 @@ while (cyclicGeneration == 1)
         %
         %ofdm_signal_noisy = 1i.*real(ofdm_signal)+imag(ofdm_signal);
 
-        ofdm_signal_noisy = ofdm_signal_noisy .* signalAmplitude;
         if (deviceType == 1)            
-            for cycleCnt = 1:1:nfor    
+            for cycleCnt = 1:1:nfor
+                tic;
                 disp(horzcat('generate samples, step ',num2str(cycleCnt)));
                 step(Tx, ofdm_signal_noisy);
+                benchmark(cycleCnt+1) = toc;       %meranie casu vypoctu
             end
         end
         
-        %
-        %   Benchmark
-        %
-
-    benchmark(cycleCnt+1) = toc;       %meranie casu vypoctu
-    
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     %   Debuging part only
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         %   DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG
-        dSigReal = real(ofdm_signal_noisy);
-        dSigImag = imag(ofdm_signal_noisy);
+%         figure;
+%         plot(real(frames));
+%         hold on;
+%         plot(imag(frames));
+%         hold off;
+        dSigReal = real(ofdm_signal);
+        dSigImag = imag(ofdm_signal);
         fwrite(df1, reshape([dSigReal dSigImag]',1,2*length(dSigReal)), 'float32');
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -517,8 +562,13 @@ while (cyclicGeneration == 1)
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     %   Signal in time plot
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-     ofdm_signal = ofdm_signal(1:1024);
-     ofdm_signal_noisy = ofdm_signal_noisy(1:1024);
+
+    %clip signal to show, to not to display too much, calculations next are
+    %based on this signal!
+    if (length(ofdm_signal) > 10e3) 
+        ofdm_signal = ofdm_signal(1:10e3);
+        ofdm_signal_noisy = ofdm_signal_noisy(1:10e3);
+    end
     
     axes(handles.ofdmWaveAxes);
     plot(zeros(1,ifftLen));
@@ -615,7 +665,9 @@ end
 if (deviceType == 1)
     release(Tx);
 end
-release(packetHeadMod);
+if (enablePackets == 1)
+    release(packetHeadMod);
+end
 release(payloadMod);
 handles.data.seqData = data_source; %for LW410 output
 
@@ -781,7 +833,7 @@ function dataInputFileRadio_Callback(hObject, eventdata, handles)
 % handles    structure with handles and user data (see GUIDATA)
 
 % Hint: get(hObject,'Value') returns toggle state of dataInputFileRadio
-
+dataInputGroup_SelectionChangeFcn(hObject, eventdata, handles);
 
 % --- Executes when selected object is changed in dataInputGroup.
 function dataInputGroup_SelectionChangeFcn(hObject, eventdata, handles)
@@ -795,16 +847,10 @@ if (get(handles.dataInputRandomRadio, 'Value') == 1) handles.ofdm.dataInputMetho
 elseif (get(handles.dataInputUserRadio, 'Value') == 1) handles.ofdm.dataInputMethod = 'user';
 elseif (get(handles.dataInputFileRadio, 'Value') == 1)
     handles.ofdm.dataInputMethod = 'file';
-    [fileName,path] = uigetfile('','Select file with samples');
+    [fileName,path] = uigetfile('*','Select file with samples');
     handles.ofdm.file = horzcat(path, fileName);
     set(handles.seqFileInput, 'string', horzcat(path, fileName));
     set(handles.statusText, 'string', horzcat('Data input from file ', path, fileName));
-elseif (get(handles.gnuradioInputFileRadio, 'Value') == 1)
-    handles.ofdm.dataInputMethod = 'gnuradio';
-    [fileName,path] = uigetfile('','Select file with gnuradio samples');
-    handles.ofdm.file = horzcat(path, fileName);
-    set(handles.seqInput, 'string', horzcat(path, fileName));
-    set(handles.statusText, 'string', horzcat('Data input from gnuradio file ', path, fileName));
 end
 
 disp(horzcat('Data input method changed to ', handles.ofdm.dataInputMethod));
@@ -1254,22 +1300,121 @@ function saveCurrentSettings_Callback(hObject, eventdata, handles)
 %   ToDo:
 %       - generating file names by date
 %
+
+modTypeList = get(handles.modulationTypePopup,'String');
+payloadModType = modTypeList{get(handles.modulationTypePopup, 'Value')}
+
+contents = cellstr(get(handles.gpibAddrPopup,'String'));
+gpib_addr = str2num(contents{get(handles.gpibAddrPopup,'Value')});
+gpib_addr = cellstr(num2str(gpib_addr));
+
+contents = cellstr(get(handles.sampleFreqPopup,'String'));
+sampleFreq = contents{get(handles.sampleFreqPopup,'Value')};
+
 paramsToSave = [ ...
-    str2num(get(handles.ifftLen, 'String')) ...
-    str2num(get(handles.editSignalAmplitude, 'String')) ...
+    cellstr(num2str(get(handles.dataInputRandomRadio,'Value')))   ...
+    cellstr(num2str(get(handles.dataInputUserRadio, 'Value')))    ...
+    cellstr(num2str(get(handles.dataInputFileRadio, 'Value')))    ...
+    cellstr(get(handles.seqInput, 'String')) ...
+    cellstr(get(handles.seqFileInput, 'String')) ...
+    cellstr(payloadModType) ...
+    cellstr(get(handles.ifftLen, 'String')) ...
+    cellstr(get(handles.editSignalAmplitude, 'String')) ...    
+    cellstr(get(handles.numOfSymbolsInput, 'String')) ...
+    cellstr(num2str(get(handles.intervalRadio,'Value')))  ...
+    cellstr(num2str(get(handles.intervalNotusedRadio,'Value')))   ...
+    cellstr(get(handles.prefixLengthInput, 'String')) ...
+    cellstr(get(handles.guardLengthInput, 'String')) ...
+    cellstr(get(handles.occupiedCarriers, 'String')) ...
+    cellstr(get(handles.pilotTonesPositions, 'String')) ...
+    cellstr(get(handles.pilotSymbols, 'String')) ...
+    cellstr(num2str(get(handles.enablePackets,'Value')))   ...
+    cellstr(get(handles.packetLen,'String'))   ...
+    cellstr(get(handles.sync1,'String'))   ...
+    cellstr(get(handles.sync2,'String'))   ...
+    cellstr(num2str(get(handles.noChannelRadio,'Value')))   ...
+    cellstr(num2str(get(handles.awgnRadio,'Value')))   ...
+    cellstr(num2str(get(handles.rayleighRadio,'Value')))   ...
+    cellstr(num2str(get(handles.riceRadio,'Value')))   ...
+    cellstr(get(handles.awgnLevel,'String'))   ...
+    cellstr(get(handles.doplerShiftIn,'String'))   ...
+    cellstr(num2str(get(handles.noDevice,'Value')))   ...
+    cellstr(num2str(get(handles.usrpDevice,'Value')))   ...
+    cellstr(num2str(get(handles.lw410Device,'Value')))   ...
+    cellstr(get(handles.noDeviceSampleRate,'String'))   ...
+    cellstr(get(handles.editUsrpInterp,'String'))   ...
+    cellstr(get(handles.USRPSampleRate,'String'))   ...
+    cellstr(get(handles.oversamplingInput,'String'))   ...
+    cellstr(get(handles.editTxCycleCount,'String'))   ...
+    cellstr(get(handles.carrierFreqInput,'String'))   ...
+    cellstr(get(handles.txGain,'String'))   ...
+    cellstr(get(handles.USRPIPaddr,'String'))   ...
+    cellstr(gpib_addr)   ...
+    cellstr(sampleFreq)  ...
+    cellstr(num2str(get(handles.cyclicGeneration,'Value')))   ...    
 ];
-dlmwrite(horzcat('OFDMSettings ',datestr(now,'dd-mmm-yyyy HH-MM-SS'),'.txt'), paramsToSave,'delimiter',';');
+
+[fileName,path] = uiputfile('*','Select file to save settings');
+f = fopen(horzcat(path,fileName),'w');
+fprintf(f,repmat('%s\n',1,length(paramsToSave)),paramsToSave{1:end});
+fclose(f);
 
 % --- Executes on button press in pushbutton18.
 function pushbutton18_Callback(hObject, eventdata, handles)
 % hObject    handle to pushbutton18 (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
-settingsFile = dir('OFDMSettings*');
 paramsToRead = [];
-paramsToRead = dlmread(settingsFile(end).name,';');
-set(handles.ifftLen, 'String', paramsToRead(1));
-set(handles.editSignalAmplitude, 'String', paramsToRead(2));
+
+[fileName,path] = uigetfile('*','Select file with head data');
+
+f = fopen(horzcat(path,fileName),'r');
+for k = 1:40
+    paramsToRead = [paramsToRead; cellstr(fgets(f))];
+end
+fclose(f);
+
+set(handles.dataInputRandomRadio,'Value', str2num(paramsToRead{1}))
+set(handles.dataInputUserRadio, 'Value', str2num(paramsToRead{2}))
+set(handles.dataInputFileRadio, 'Value', str2num(paramsToRead{3}))
+set(handles.seqInput, 'String', paramsToRead{4})
+set(handles.seqFileInput, 'String', paramsToRead{5})
+%     str2num(payloadModType) 
+set(handles.ifftLen, 'String', paramsToRead{7})
+set(handles.editSignalAmplitude, 'String', paramsToRead{8})    
+set(handles.numOfSymbolsInput, 'String', paramsToRead{9})
+set(handles.intervalRadio,'Value', str2num(paramsToRead{10}))  
+set(handles.intervalNotusedRadio,'Value', str2num(paramsToRead{11})) 
+set(handles.prefixLengthInput, 'String', paramsToRead{12})
+set(handles.guardLengthInput, 'String', paramsToRead{13})
+set(handles.occupiedCarriers, 'String', paramsToRead{14})
+set(handles.pilotTonesPositions, 'String', paramsToRead{15})
+set(handles.pilotSymbols, 'String', paramsToRead{16})
+set(handles.enablePackets,'Value', str2num(paramsToRead{17}))
+set(handles.packetLen,'String', paramsToRead{18}) 
+set(handles.sync1,'String', paramsToRead{19})
+set(handles.sync2,'String', paramsToRead{20})
+set(handles.noChannelRadio,'Value', str2num(paramsToRead{21}))
+set(handles.awgnRadio,'Value', str2num(paramsToRead{22}))
+set(handles.rayleighRadio,'Value', str2num(paramsToRead{23}))
+set(handles.riceRadio,'Value', str2num(paramsToRead{24})) 
+set(handles.awgnLevel,'String', paramsToRead{25})
+set(handles.doplerShiftIn,'String', paramsToRead{26})
+set(handles.noDevice,'Value', str2num(paramsToRead{27}))
+set(handles.usrpDevice,'Value', str2num(paramsToRead{28}))
+set(handles.lw410Device,'Value', str2num(paramsToRead{29}))
+set(handles.noDeviceSampleRate,'String', paramsToRead{30})
+set(handles.editUsrpInterp,'String', paramsToRead{31})
+set(handles.USRPSampleRate,'String', paramsToRead{32})
+set(handles.oversamplingInput,'String', paramsToRead{33})
+set(handles.editTxCycleCount,'String', paramsToRead{34})
+set(handles.carrierFreqInput,'String', paramsToRead{35}) 
+set(handles.txGain,'String', paramsToRead{36})
+set(handles.USRPIPaddr,'String', paramsToRead{37}) 
+%     gpib_addr  
+%     sampleFreq 
+set(handles.cyclicGeneration,'Value', str2num(paramsToRead{40}))
+
 guidata(hObject, handles);
 
 
@@ -1474,7 +1619,7 @@ if (get(handles.noHeadDataRadio, 'Value') == 1)
     handles.ofdm.headData = 0;
 elseif (get(handles.headDataRadio, 'Value') == 1)
     handles.ofdm.headData = 1;
-    [fileName,path] = uigetfile('','Select file with head data');
+    [fileName,path] = uigetfile('*','Select file with head data');
     handles.ofdm.headFile = horzcat(path, fileName);
     set(handles.statusText, 'String', horzcat('Header data read from file ', handles.ofdm.headFile));
 end
@@ -1841,3 +1986,138 @@ function butSetOutput_KeyPressFcn(hObject, eventdata, handles)
 %	Character: character interpretation of the key(s) that was pressed
 %	Modifier: name(s) of the modifier key(s) (i.e., control, shift) pressed
 % handles    structure with handles and user data (see GUIDATA)
+
+
+% --- Executes on button press in debugCompareSignalsBut.
+function debugCompareSignalsBut_Callback(hObject, eventdata, handles)
+% hObject    handle to debugCompareSignalsBut (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+GUIvsGnuradio;
+
+
+
+% --- If Enable == 'on', executes on mouse press in 5 pixel border.
+% --- Otherwise, executes on mouse press in 5 pixel border or over dataInputFileRadio.
+function dataInputFileRadio_ButtonDownFcn(hObject, eventdata, handles)
+% hObject    handle to dataInputFileRadio (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+
+% --- Executes on button press in pushbutton28.
+function pushbutton28_Callback(hObject, eventdata, handles)
+% hObject    handle to pushbutton28 (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+sync1 = eval(get(handles.sync1, 'string'));
+sync2 = eval(get(handles.sync2, 'string'));
+ifftLen = str2num(get(handles.ifftLen, 'string'));
+packetLen = str2num(get(handles.packetLen, 'string'));
+pilotSymbols = eval(get(handles.pilotSymbols, 'string'));
+pilotCarriers = eval(get(handles.pilotTonesPositions, 'string'));
+occupiedCarriers = eval(get(handles.occupiedCarriers, 'string'));
+
+packetHeadModTypeList = get(handles.packetHeadModType,'String');
+modTypeList = get(handles.modulationTypePopup,'String');
+payloadModType = modTypeList{get(handles.modulationTypePopup, 'Value')};
+packetHeadModType = packetHeadModTypeList(get(handles.packetHeadModType, 'Value'),:);
+
+txTemplate = regexp( fileread('templates/tx.grc'),'\n','split');
+
+tsync1 = '<value>(';
+for k = 1:length(sync1)
+    if (k ~= 1)
+         tsync1 = [tsync1 ',' num2str(sync1(k))] 
+    else
+         tsync1 = [tsync1 num2str(sync1(k))] 
+    end
+end
+tsync1 = [tsync1 ')</value>'];
+txTemplate{405} = tsync1;
+
+tsync2 = '<value>(';
+for k = 1:length(sync2)
+    if (k ~= 1)
+         tsync2 = [tsync2 ',' num2str(sync2(k))] 
+    else
+         tsync2 = [tsync2 num2str(sync2(k))] 
+    end
+end
+tsync2 = [tsync2 ')</value>'];
+txTemplate{432} = tsync2;
+
+txTemplate{108} = ['<value>' num2str(ifftLen) '</value>'];
+txTemplate{243} = ['<value>' num2str(packetLen) '</value>'];
+
+tpilotSym = '<value>((';
+for k = 1:length(pilotCarriers)
+    if (k ~= 1)
+         tpilotSym = [tpilotSym ',' num2str(pilotCarriers(k))] 
+    else
+         tpilotSym = [tpilotSym num2str(pilotCarriers(k))] 
+    end
+end
+tpilotSym = [tpilotSym '),)</value>'];
+txTemplate{324} = tpilotSym;
+
+tpilotCarriers = '<value>((';
+for k = 1:length(pilotSymbols)
+    if (k ~= 1)
+         tpilotCarriers = [tpilotCarriers ',' num2str(pilotSymbols(k))] 
+    else
+         tpilotCarriers = [tpilotCarriers num2str(pilotSymbols(k))] 
+    end
+end
+tpilotCarriers = [tpilotCarriers '),)</value>'];
+txTemplate{297} = tpilotCarriers;
+
+toccupiedCarriers = '<value>([';
+for k = 1:length(occupiedCarriers)
+    if (k ~= 1)
+         toccupiedCarriers = [toccupiedCarriers ',' num2str(occupiedCarriers(k))];
+    else
+         toccupiedCarriers = [toccupiedCarriers num2str(occupiedCarriers(k))];
+    end
+end
+toccupiedCarriers = [toccupiedCarriers '],)</value>'];
+txTemplate{216} = toccupiedCarriers;
+
+txTemplate{797} = ['<value>"' packetHeadModType '"</value>'];
+txTemplate{825} = ['<value>"' payloadModType '"</value>'];
+
+[fileName,path] = uiputfile('*','Select file to save debug TCVR');
+f = fopen(horzcat(path,fileName),'w');
+fprintf(f,'%s\n',txTemplate{:});
+fclose(f);
+
+
+% --- Executes on button press in renewSyncBut.
+function renewSyncBut_Callback(hObject, eventdata, handles)
+% hObject    handle to renewSyncBut (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+ifftLen = str2double(get(handles.ifftLen, 'string'));
+occupiedCarriers = eval(get(handles.occupiedCarriers, 'string'));
+pilotCarriers = eval(get(handles.pilotTonesPositions, 'string'));
+generateSync(ifftLen,occupiedCarriers,pilotCarriers);
+
+sync1 = '';
+f = fopen('sync1.txt','r');
+sync1 = fscanf(f,'%s');
+fclose(f);
+
+sync2 = '';
+f = fopen('sync2.txt','r');
+sync2 = fscanf(f,'%s');
+fclose(f);
+
+sync1(1) = '[';
+sync1(end) = ']';
+sync2(1) = '[';
+sync2(end) = ']';
+
+set(handles.sync1,'String',sync1);
+set(handles.sync2,'String',sync2);
+
+guidata(hObject, handles);

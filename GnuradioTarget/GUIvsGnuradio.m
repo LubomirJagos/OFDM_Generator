@@ -1,8 +1,8 @@
 %
 %   LuboJ.
 %
-close all
-clear all
+% close all
+% clear all
 
 nRead = 5000;
 
@@ -16,17 +16,7 @@ end
 mySig = arrayToComplex(fread(f2,2*nRead,'float32')');
 fclose(f2);
 
-%mySig = 1i*real(mySig) + imag(mySig);
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-% f2 = fopen('GnuradioTarget/block_tests_files/ofdm_sig_outScript.txt','r');
-% if (f2 == -1)
-%     f2 = fopen('block_tests_files/ofdm_sig_outScript.txt','r');
-% end
-% mySig = arrayToComplex(fread(f2,nRead,'float32')');
-% fclose(f2);
+% mySig = 1i*real(mySig) + imag(mySig);
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -36,24 +26,13 @@ end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-f = fopen('GnuradioTarget/block_tests_files/ofdm_sig_outScript.txt','r');
-if (f == -1)
-    f = fopen('block_tests_files/ofdm_sig_outScript.txt','r');
+f1 = fopen('GnuradioTarget/block_tests_files/ofdm_sig_out.txt','r');
+if (f1 == -1)
+    f1 = fopen('block_tests_files/ofdm_sig_out.txt','r');
 end
-gnuradioSamp = arrayToComplex(fread(f,2*nRead,'float32')');
-fclose(f);
+gnuradioSamp = arrayToComplex(fread(f1,2*nRead,'float32')');
+fclose(f1);
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-% f = fopen('block_tests_files/ofdm_sig_out.txt','r');
-% if (f == -1)
-%     f = fopen('GnuradioTarget/block_tests_files/ofdm_sig_out.txt','r');
-% end
-% gnuradioSamp = arrayToComplex(fread(f,2*nRead,'float32')');    % <----- pozor normovanie!!
-% fclose(f);
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 % index = 10;
@@ -74,7 +53,17 @@ plot(imag(gnuradioSamp));
 hold off;
 
 figure;
-plot(abs(mySig-gnuradioSamp));
-title('Gnuradio vs calculated comparison');
+subplot(211);
+plot(real(mySig) - real(gnuradioSamp));
+title('Gnuradio vs calculated real comparison');
+subplot(212);
+plot(imag(mySig) - imag(gnuradioSamp));
+title('Gnuradio vs calculated imag comparison');
 % ylim([-1 1]);
 
+% frames = ifft(ifftshift(gnuradioSamp));
+% figure;
+% plot(real(frames));
+% hold on;
+% plot(imag(frames), '-r');
+% hold off;
