@@ -22,7 +22,11 @@ function varargout = main(varargin)
 
 % Edit the above text to modify the response to help main
 
+<<<<<<< HEAD
 % Last Modified by GUIDE v2.5 15-May-2017 10:11:21
+=======
+% Last Modified by GUIDE v2.5 11-May-2017 02:23:49
+>>>>>>> caa2e9fcfafb0a4fa2651ef2c22ef7d53706222e
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -398,10 +402,14 @@ while (cyclicGeneration == 1)
 
                 header = generateHeader(packetLen+4,o);       %plus 4 because there is CRC added in payload    
                 o = o + 1;
+<<<<<<< HEAD
                 
                 %for fft 64 not diff btw ceil and floor
                 headerLen = 8*floor(nCarriers/8);             %not documented detail that header is increasing due to carriers
 %                 headerLen = 8*ceil(nCarriers/8);
+=======
+                headerLen = 8*floor(nCarriers/8);             %not documented detail that header is increasing due to carriers
+>>>>>>> caa2e9fcfafb0a4fa2651ef2c22ef7d53706222e
                 header = [header zeros(1,headerLen-length(header))];
                 header = header(1:headerLen)';
                 
@@ -526,11 +534,14 @@ while (cyclicGeneration == 1)
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         %   DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG
+<<<<<<< HEAD
 %         figure;
 %         plot(real(frames));
 %         hold on;
 %         plot(imag(frames));
 %         hold off;
+=======
+>>>>>>> caa2e9fcfafb0a4fa2651ef2c22ef7d53706222e
         dSigReal = real(ofdm_signal);
         dSigImag = imag(ofdm_signal);
         fwrite(df1, reshape([dSigReal dSigImag]',1,2*length(dSigReal)), 'float32');
@@ -2003,6 +2014,7 @@ function dataInputFileRadio_ButtonDownFcn(hObject, eventdata, handles)
 % hObject    handle to dataInputFileRadio (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
+<<<<<<< HEAD
 
 
 % --- Executes on button press in pushbutton28.
@@ -2121,3 +2133,5 @@ set(handles.sync1,'String',sync1);
 set(handles.sync2,'String',sync2);
 
 guidata(hObject, handles);
+=======
+>>>>>>> caa2e9fcfafb0a4fa2651ef2c22ef7d53706222e
