@@ -348,7 +348,7 @@ while (cyclicGeneration == 1)
         
         %
         %   debug
-%         df1 = fopen('debug/GnuradioTarget/ofdm_sig_outGUI.txt','w');
+        df1 = fopen('debug/GnuradioTarget/ofdm_sig_outGUI.txt','w');
         %
 
         packetLen = packetLenOriginal;
@@ -399,9 +399,22 @@ while (cyclicGeneration == 1)
                 header = generateHeader(packetLen+4,o);       %plus 4 because there is CRC added in payload    
                 o = o + 1;
                 
-                %for fft 64 not diff btw ceil and floor
-                headerLen = 8*floor(nCarriers/8);             %not documented detail that header is increasing due to carriers
-%                 headerLen = 8*ceil(nCarriers/8);
+                %for 64
+                %for 128
+                %headerLen = 8*floor(nCarriers/8);             %not documented detail that header is increasing due to carriers
+                
+                %THIS WOULD BE LITTLE EMPIRICAL :)
+                %for 512 is ceil()-1
+                %for 1024 is ceil()-5  nCarriers = 275 pilots = 4
+                %for 1024 is ceil()-2  nCarriers = 334 pilots = 4
+                %for 1024 is ceil()-1  nCarriers = 351 pilots = 4
+                %for 1024 is ceil()    nCarriers = 368 pilots = 4
+                %headerLen = 8*ceil(nCarriers/8);
+                
+                %hypothesis LOOKS OK! (for now all pass)
+                %for 1024 nCarriers = 418 pilots = 4
+                headerLen = 8*floor(nCarriers/8)+rem(nCarriers,8);
+
                 header = [header zeros(1,headerLen-length(header))];
                 header = header(1:headerLen)';
                 
@@ -538,10 +551,10 @@ while (cyclicGeneration == 1)
 %         hold on;
 %         plot(imag(frames));
 %         hold off;
-%         dSigReal = real(ofdm_signal);
-%         dSigImag = imag(ofdm_signal);
-%         fwrite(df1, reshape([dSigReal dSigImag]',1,2*length(dSigReal)), 'float32');
-%         fclose(df1);
+        dSigReal = real(ofdm_signal);
+        dSigImag = imag(ofdm_signal);
+        fwrite(df1, reshape([dSigReal dSigImag]',1,2*length(dSigReal)), 'float32');
+        fclose(df1);
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 
@@ -2081,13 +2094,14 @@ packetHeadModType = packetHeadModTypeList(get(handles.packetHeadModType, 'Value'
 txTemplate = regexp( fileread('templates/OFDM_Receiver.grc'),'\n','split');
 
 txTemplate{567} = ['<value>' num2str(fs) '</value>'];
+txTemplate{216} = ['<value>' num2str(cpLen) '</value>'];
 
 tsync1 = '<value>(';
 for k = 1:length(sync1)
     if (k ~= 1)
-         tsync1 = [tsync1 ',' num2str(sync1(k))] 
+         tsync1 = [tsync1 ',' num2str(sync1(k))]; 
     else
-         tsync1 = [tsync1 num2str(sync1(k))] 
+         tsync1 = [tsync1 num2str(sync1(k))]; 
     end
 end
 tsync1 = [tsync1 ')</value>'];
@@ -2096,9 +2110,9 @@ txTemplate{594} = tsync1;
 tsync2 = '<value>(';
 for k = 1:length(sync2)
     if (k ~= 1)
-         tsync2 = [tsync2 ',' num2str(sync2(k))] 
+         tsync2 = [tsync2 ',' num2str(sync2(k))]; 
     else
-         tsync2 = [tsync2 num2str(sync2(k))] 
+         tsync2 = [tsync2 num2str(sync2(k))]; 
     end
 end
 tsync2 = [tsync2 ')</value>'];
@@ -2110,9 +2124,9 @@ txTemplate{405} = ['<value>' num2str(packetLen) '</value>'];
 tpilotCarriers = '<value>((';
 for k = 1:length(pilotCarriers)
     if (k ~= 1)
-         tpilotCarriers = [tpilotCarriers ',' num2str(pilotCarriers(k))] 
+         tpilotCarriers = [tpilotCarriers ',' num2str(pilotCarriers(k))]; 
     else
-         tpilotCarriers = [tpilotCarriers num2str(pilotCarriers(k))] 
+         tpilotCarriers = [tpilotCarriers num2str(pilotCarriers(k))]; 
     end
 end
 tpilotCarriers = [tpilotCarriers '),)</value>'];
@@ -2121,9 +2135,9 @@ txTemplate{513} = tpilotCarriers;
 tpilotSym = '<value>((';
 for k = 1:length(pilotSymbols)
     if (k ~= 1)
-         tpilotSym = [tpilotSym ',' num2str(pilotSymbols(k))] 
+         tpilotSym = [tpilotSym ',' num2str(pilotSymbols(k))]; 
     else
-         tpilotSym = [tpilotSym num2str(pilotSymbols(k))] 
+         tpilotSym = [tpilotSym num2str(pilotSymbols(k))]; 
     end
 end
 tpilotSym = [tpilotSym '),)</value>'];
@@ -2208,13 +2222,14 @@ packetHeadModType = packetHeadModTypeList(get(handles.packetHeadModType, 'Value'
 txTemplate = regexp( fileread('templates/OFDM_Transmitter.grc'),'\n','split');
 
 txTemplate{567} = ['<value>' num2str(fs) '</value>'];
+txTemplate{216} = ['<value>' num2str(cpLen) '</value>'];
 
 tsync1 = '<value>(';
 for k = 1:length(sync1)
     if (k ~= 1)
-         tsync1 = [tsync1 ',' num2str(sync1(k))] 
+         tsync1 = [tsync1 ',' num2str(sync1(k))]; 
     else
-         tsync1 = [tsync1 num2str(sync1(k))] 
+         tsync1 = [tsync1 num2str(sync1(k))]; 
     end
 end
 tsync1 = [tsync1 ')</value>'];
@@ -2223,9 +2238,9 @@ txTemplate{594} = tsync1;
 tsync2 = '<value>(';
 for k = 1:length(sync2)
     if (k ~= 1)
-         tsync2 = [tsync2 ',' num2str(sync2(k))] 
+         tsync2 = [tsync2 ',' num2str(sync2(k))]; 
     else
-         tsync2 = [tsync2 num2str(sync2(k))] 
+         tsync2 = [tsync2 num2str(sync2(k))];
     end
 end
 tsync2 = [tsync2 ')</value>'];
@@ -2237,9 +2252,9 @@ txTemplate{405} = ['<value>' num2str(packetLen) '</value>'];
 tpilotCarriers = '<value>((';
 for k = 1:length(pilotCarriers)
     if (k ~= 1)
-         tpilotCarriers = [tpilotCarriers ',' num2str(pilotCarriers(k))] 
+         tpilotCarriers = [tpilotCarriers ',' num2str(pilotCarriers(k))]; 
     else
-         tpilotCarriers = [tpilotCarriers num2str(pilotCarriers(k))] 
+         tpilotCarriers = [tpilotCarriers num2str(pilotCarriers(k))]; 
     end
 end
 tpilotCarriers = [tpilotCarriers '),)</value>'];
@@ -2248,9 +2263,9 @@ txTemplate{513} = tpilotCarriers;
 tpilotSym = '<value>((';
 for k = 1:length(pilotSymbols)
     if (k ~= 1)
-         tpilotSym = [tpilotSym ',' num2str(pilotSymbols(k))] 
+         tpilotSym = [tpilotSym ',' num2str(pilotSymbols(k))]; 
     else
-         tpilotSym = [tpilotSym num2str(pilotSymbols(k))] 
+         tpilotSym = [tpilotSym num2str(pilotSymbols(k))];
     end
 end
 tpilotSym = [tpilotSym '),)</value>'];
@@ -2344,9 +2359,9 @@ txTemplate{216} = ['<value>' num2str(cpLen) ' </value>'];       %sample rate
 tsync1 = '<value>(';
 for k = 1:length(sync1)
     if (k ~= 1)
-         tsync1 = [tsync1 ',' num2str(sync1(k))] 
+         tsync1 = [tsync1 ',' num2str(sync1(k))]; 
     else
-         tsync1 = [tsync1 num2str(sync1(k))] 
+         tsync1 = [tsync1 num2str(sync1(k))]; 
     end
 end
 tsync1 = [tsync1 ')</value>'];
@@ -2355,9 +2370,9 @@ txTemplate{594} = tsync1;                                       %sync1
 tsync2 = '<value>(';
 for k = 1:length(sync2)
     if (k ~= 1)
-         tsync2 = [tsync2 ',' num2str(sync2(k))] 
+         tsync2 = [tsync2 ',' num2str(sync2(k))]; 
     else
-         tsync2 = [tsync2 num2str(sync2(k))] 
+         tsync2 = [tsync2 num2str(sync2(k))]; 
     end
 end
 tsync2 = [tsync2 ')</value>'];                                  
@@ -2369,9 +2384,9 @@ txTemplate{405} = ['<value>' num2str(packetLen) '</value>'];
 tpilotSym = '<value>((';
 for k = 1:length(pilotCarriers)
     if (k ~= 1)
-         tpilotSym = [tpilotSym ',' num2str(pilotCarriers(k))] 
+         tpilotSym = [tpilotSym ',' num2str(pilotCarriers(k))]; 
     else
-         tpilotSym = [tpilotSym num2str(pilotCarriers(k))] 
+         tpilotSym = [tpilotSym num2str(pilotCarriers(k))]; 
     end
 end
 tpilotSym = [tpilotSym '),)</value>'];
@@ -2380,9 +2395,9 @@ txTemplate{513} = tpilotSym;
 tpilotCarriers = '<value>((';
 for k = 1:length(pilotSymbols)
     if (k ~= 1)
-         tpilotCarriers = [tpilotCarriers ',' num2str(pilotSymbols(k))] 
+         tpilotCarriers = [tpilotCarriers ',' num2str(pilotSymbols(k))]; 
     else
-         tpilotCarriers = [tpilotCarriers num2str(pilotSymbols(k))] 
+         tpilotCarriers = [tpilotCarriers num2str(pilotSymbols(k))]; 
     end
 end
 tpilotCarriers = [tpilotCarriers '),)</value>'];
