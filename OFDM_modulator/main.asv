@@ -187,7 +187,7 @@ ifftLen = str2double(get(handles.ifftLen, 'string'))
 nSymbols = str2double(get(handles.numOfSymbolsInput, 'string'))
 oversampleFactor = str2double(get(handles.oversamplingInput, 'string'))
 noDeviceOversampleFactor = str2double(get(handles.noDeviceOversamplingInput, 'string'))
-fc = 1e3;
+fc = str2double(get(handles.carrierFreqInput, 'string'))*1e3
                                                              
 insertPrefixInterval= get(handles.intervalRadio, 'Value');
 insertGuardInterval= get(handles.guardRadio, 'Value');
@@ -347,7 +347,6 @@ if (deviceType == 0)
     nfor = 1;
     oversampleFactor = noDeviceOversampleFactor;
 elseif (deviceType == 1)
-    fc = str2double(get(handles.carrierFreqInput, 'string'))*1e3
     nfor = str2num(get(handles.editTxCycleCount,'String'));
     usrpIp = get(handles.USRPIPaddr, 'string');
     Tx = comm.SDRuTransmitter(...
@@ -357,8 +356,7 @@ elseif (deviceType == 1)
       'Gain', txGain);
 elseif (deviceType == 2)
     nfor = 1;
-    oversampleFactor = 1;
-    fc = str2double(get(handles.lw410carrier, 'string'))*1e3
+    oversampleFactor = floor(lw410fs/fs);
     handles.lw410.fs = lw410fs;
 end
 
@@ -567,18 +565,18 @@ while (cyclicGeneration == 1)
                 benchmark(cycleCnt+1) = toc;       %meranie casu vypoctu
             end
         elseif (deviceType == 2)
+            disp(horzcat('Sequence length #samples: ', num2str(length(ofdm_signal_noisy))));
+            set(handles.statusText, 'String', horzcat('LW410 uploading sequence. ', num2str(length(ofdm_signal_noisy)), ' samples'))
             
             %LW410 data output - we have to mixed baseband with carrier in
             %software
             
-            ofdm_signal_noisy = resample(ofdm_signal_noisy,floor(lw410fs/fs),1);
+            ofdm_signal_noisy = resample(ofdm_signal_noisy,);
             ds = 1/lw410fs;
-            t = [0:ds:(length(ofdm_signal_noisy)-1)*ds]';
-            disp(horzcat('Sequence length #samples: ', num2str(length(ofdm_signal_noisy))));
-            set(handles.statusText, 'String', horzcat('LW410 uploading sequence. ', num2str(length(ofdm_signal_noisy)), ' samples'))
-            ofdm_signal_noisy = ofdm_signal_noisy .* exp(1j*2*pi*fc*t);
-            ofdm_signal_noisy = real(ofdm_signal_noisy) + imag(ofdm_signal_noisy);
-            handles.lw410.wave_data(ofdm_signal_noisy', 1);
+            t = 0:ds:length()
+%             ofdm_signal_noisy = ;
+            
+%             handles.lw410.wave_data(ofdm_signal_noisy, 1);
         end
         
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

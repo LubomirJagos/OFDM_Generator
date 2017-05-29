@@ -28,7 +28,7 @@ classdef LW410Interface
         fs = 4e6;
         inSetMethod = 0;
         
-        path = 'c:\LeCroy_LW410'
+        path = 'LW410conv'
     end
             
     methods
@@ -184,7 +184,7 @@ classdef LW410Interface
         function [seq] = convertData(obj, varargin)
             disp('LW410Interface.waveData(): Converting sequence into DIFF format.');
             seq = varargin{1};
-            command = [obj.path, '\LWConv.exe ', obj.path, '\temp.asc ', obj.path, '\temp.dif 0 USERSEQ USERSEQ ', num2str(obj.sampletime)];
+            command = [obj.path, 'LW410conv\LWConv.exe ', obj.path, 'LW410conv\temp.asc ', obj.path, '\temp.dif 0 USERSEQ USERSEQ ', num2str(obj.sampletime)];
 
             %if obj.path is not corrent user can choose path
             %if choosed path is not correct original one is
