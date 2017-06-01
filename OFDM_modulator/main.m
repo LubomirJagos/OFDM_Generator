@@ -625,9 +625,6 @@ while (cyclicGeneration == 1)
             ofdm_signal_noisy = ofdm_signal_noisy .* exp(1j*2*pi*fc*t);
             ofdm_signal_noisy = real(ofdm_signal_noisy) + imag(ofdm_signal_noisy);
 
-            % OUTPUT TX!
-            figure;
-            plot(20*log10(abs(fft(ofdm_signal_noisy,4096)./4096)));
             handles.lw410.wave_data(ofdm_signal_noisy', 1);
         end
         
@@ -719,22 +716,17 @@ while (cyclicGeneration == 1)
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     
     sigSpec = 20*log10(abs(fft(ofdm_signal))./length(ofdm_signal));
-    dfs = fs/length(ofdm_signal)
+    dfs = fs/length(ofdm_signal);
     minX = -fs/2;
     maxX = abs(minX)-dfs;
     xAxis = linspace(minX, maxX, length(ofdm_signal)).*1e-3;
 
     axes(handles.ofdmWaveAxes4);
-    sigSpecNoisy = 20*log10(abs(fft(ofdm_signal_noisy))./length(ofdm_signal_noisy));
-    plot(xAxis, fftshift(sigSpecNoisy));
+    plot(xAxis, fftshift(sigSpec));
 
-    ylim([floor(min(sigSpecNoisy)/10)*10 ceil(max(sigSpecNoisy)/10)*10]);
+    ylim([floor(min(sigSpec)/10)*10 ceil(max(sigSpec)/10)*10]);
     xlim([xAxis(1) xAxis(end)]);
 
-% PLOT ORIGINAL SIGNAL WITHOUT ANY NOISE    
-%     hold on;
-%     plot(xAxis,fftshift(sigSpec), '--r')
-%     hold off;
     if (useChannelModel == 0)
         title('Bandwidth signal spectrum'); xlabel('f[kHz]'); ylabel('A[dBm]');
     elseif (useChannelModel == 1)
@@ -2240,8 +2232,8 @@ end
 toccupiedCarriers = [toccupiedCarriers '],)</value>'];
 txTemplate{378} = toccupiedCarriers;
 
-txTemplate{762} = ['<value>"' packetHeadModType '"</value>'];
-txTemplate{790} = ['<value>"' payloadModType '"</value>'];
+txTemplate{813} = ['<value>"' packetHeadModType '"</value>'];
+txTemplate{841} = ['<value>"' payloadModType '"</value>'];
 
 [fileName,path] = uiputfile('*','Select file to save debug TCVR');
 if (fileName ~= 0)
