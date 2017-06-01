@@ -22,7 +22,7 @@ function varargout = main(varargin)
 
 % Edit the above text to modify the response to help main
 
-% Last Modified by GUIDE v2.5 29-May-2017 08:45:15
+% Last Modified by GUIDE v2.5 01-Jun-2017 08:58:04
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -76,6 +76,11 @@ handles.ofdm.headData = 0;
 
 % Update handles structure
 handles.langENG = 1;
+
+% reading images for display output device
+handles.usrpDeviceImg = imread('img/usrp.png');
+handles.lw410Img = imread('img/lw410.png');
+
 guidata(hObject, handles);
 
 % UIWAIT makes main wait for user response (see UIRESUME)
@@ -337,6 +342,31 @@ elseif (get(handles.awgnRadio, 'Value') == 1)
     awgnLevel = str2double(get(handles.awgnLevel, 'string'));
 end
 
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%   Values checking!
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+isError = 0;    %clear error flag
+if (sum(ismember(pilotCarriers, occupiedCarriers)))
+    msgbox('There is pilot tone at subcarrier position!','Error!');
+    isError = 1;
+end
+if ((max(occupiedCarriers) > ifftLen) || (min(occupiedCarriers) < 1))
+    msgbox('Allocated carriers values should be inside <-ifftLen/2, ifftLen/2-1) interval.','Error!');
+    isError = 1;
+end
+if (enablePackets && length(sync1) ~= ifftLen)
+    msgbox('1st sync word should have same length as IFFT.','Error!');
+    isError = 1;
+end
+if (enablePackets && length(sync2) ~= ifftLen)
+    msgbox('2nd sync word should have same length as IFFT.','Error!');
+    isError = 1;
+end
+
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %   Jadro, OFDM modulator
 %       - LW410 inicializacia
@@ -350,19 +380,41 @@ elseif (deviceType == 1)
     fc = str2double(get(handles.carrierFreqInput, 'string'))*1e3
     nfor = str2num(get(handles.editTxCycleCount,'String'));
     usrpIp = get(handles.USRPIPaddr, 'string');
-    Tx = comm.SDRuTransmitter(...
-      'IPAddress', usrpIp, ...
-      'CenterFrequency', fc, ...
-      'InterpolationFactor', floor(100e6/fs), ...
-      'Gain', txGain);
+    try
+        Tx = comm.SDRuTransmitter(...
+          'IPAddress', usrpIp, ...
+          'CenterFrequency', fc, ...
+          'InterpolationFactor', floor(100e6/fs), ...
+          'Gain', txGain);
+    catch ME
+        msgbox('There is some problem with USRP radio!','Error!');
+        isError = 1;
+    end
 elseif (deviceType == 2)
     nfor = 1;
     oversampleFactor = 1;
     fc = str2double(get(handles.lw410carrier, 'string'))*1e3
     handles.lw410.fs = lw410fs;
+    
+    try
+        handles.lw410.idn();
+    catch ME
+        msgbox('There is some problem with LW410 generator!','Error!');
+        isError = 1;
+    end
 end
 
-benchmark = zeros(1,nfor);         %meranie rychlosti
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%   In ERROR case, clear graphs!
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+if (isError)
+    cla(handles.ofdmWaveAxes);
+    cla(handles.ofdmWaveAxes3);
+    cla(handles.ofdmWaveAxes4);
+    return;
+end
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
 cyclicGeneration = 1;
 loopCounter = 0;
 
@@ -535,10 +587,6 @@ while (cyclicGeneration == 1)
 
         if (useChannelModel == 1)
             ofdm_signal_noisy = awgn(ofdm_signal, awgnLevel, 20*log10(sum(abs(ofdm_signal))));
-        elseif (useChannelModel == 2)
-            ofdm_signal_noisy = filter(channelModel, ofdm_signal);
-        elseif (useChannelModel == 3)
-            %ofdm_signal_noisy = filter(channelModel, ofdm_signal);
         else
             % useChannel == 0, default, no noise
             % no change of signal, ideal case
@@ -561,10 +609,8 @@ while (cyclicGeneration == 1)
 %        
         if (deviceType == 1)            
             for cycleCnt = 1:1:nfor
-                tic;
                 disp(horzcat('generate samples, step ',num2str(cycleCnt)));
                 step(Tx, ofdm_signal_noisy);
-                benchmark(cycleCnt+1) = toc;       %meranie casu vypoctu
             end
         elseif (deviceType == 2)
             
@@ -578,6 +624,10 @@ while (cyclicGeneration == 1)
             set(handles.statusText, 'String', horzcat('LW410 uploading sequence. ', num2str(length(ofdm_signal_noisy)), ' samples'))
             ofdm_signal_noisy = ofdm_signal_noisy .* exp(1j*2*pi*fc*t);
             ofdm_signal_noisy = real(ofdm_signal_noisy) + imag(ofdm_signal_noisy);
+
+            % OUTPUT TX!
+            figure;
+            plot(20*log10(abs(fft(ofdm_signal_noisy,4096)./4096)));
             handles.lw410.wave_data(ofdm_signal_noisy', 1);
         end
         
@@ -611,12 +661,6 @@ while (cyclicGeneration == 1)
         useChannelModel = 0;
     elseif (get(handles.awgnRadio, 'Value') == 1)
         useChannelModel = 1;
-    elseif (get(handles.rayleighRadio, 'Value') == 1)
-        maxDoplerShift = str2double(get(handles.doplerShiftIn, 'string'));
-        useChannelModel = 2;
-        channelModel = rayleighchan(1/fs, maxDoplerShift);
-    elseif (get(handles.ricianRadio, 'Value') == 1)
-        useChannelModel = 3;    
     end
     
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -629,16 +673,14 @@ while (cyclicGeneration == 1)
         frames = frames(1:10e3);
     end
     
-    %repmat()
-    
     axes(handles.ofdmWaveAxes3);
-    plot(real(frames));
-    set(gca,'Xtick',0:ifftLen/2:length(frames),'XTickLabel',{['+' num2str(ifftLen) '|-' num2str(ifftLen)] 0},'fontsize',8);
+    stem(real(frames),'marker','none');
+    set(gca,'Xtick',1:ifftLen/2:length(frames)+1,'XTickLabel',{['+' num2str(ifftLen) '|-' num2str(ifftLen)] 0},'fontsize',8);
     grid on;
     title('OFDM Frames in frequency spectrum')
     ylabel('U[V]');
     hold on;
-    plot(imag(frames),'-r')
+    stem(imag(frames),'-r','marker','none')
     hold off;
     
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -657,15 +699,15 @@ while (cyclicGeneration == 1)
     title('OFDM signal');
     xlabel('sample[-]');
     ylabel('A[V]');
-    plot(linspace(0,fs,length(ofdm_signal)), real(ofdm_signal));
-    hold on; plot(linspace(0,fs,length(ofdm_signal)), imag(ofdm_signal),'r'); hold off;
+%     plot(linspace(0,fs,length(ofdm_signal)), real(ofdm_signal)+imag(ofdm_signal));
+%     plot(linspace(0,fs,length(ofdm_signal)), real(ofdm_signal));
+%     hold on; plot(linspace(0,fs,length(ofdm_signal)), imag(ofdm_signal),'r'); hold off;
     
     timeAxis_ms = [1:length(ofdm_signal)]*1/fs*1000;
-    plot(timeAxis_ms, real(ofdm_signal));
+    plot(timeAxis_ms, real(ofdm_signal)+imag(ofdm_signal));
     xlim([timeAxis_ms(1) timeAxis_ms(end)]);
     title('OFDM signal in time domain');
-%     hold on; plot(linspace(0,fs,length(ofdm_signal)), imag(ofdm_signal),'r'); hold off;
-    hold on; plot(timeAxis_ms, imag(ofdm_signal),'r'); hold off;
+%     hold on; plot(timeAxis_ms, imag(ofdm_signal),'r'); hold off;
     grid on;
     xlabel('t[ms]'); ylabel('A[V]');
 
@@ -675,31 +717,28 @@ while (cyclicGeneration == 1)
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     % Signal after channel
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%     resample(ofdm_signal_noisy,2,1);
-%     resample(ofdm_signal,2,1);
     
-    sigSpec = 20*log10(abs(fft(ofdm_signal, 512))./512);
-    minX = -fs/2;               %VYPOCET FREKVENCNEJ OSI PRE ZOBRAZENIE!
-                                                %SKONTROLOVAT!
-    maxX = -minX;
-    xAxis = linspace(minX, maxX, 512).*1e-3;
+    sigSpec = 20*log10(abs(fft(ofdm_signal))./length(ofdm_signal));
+    dfs = fs/length(ofdm_signal)
+    minX = -fs/2;
+    maxX = abs(minX)-dfs;
+    xAxis = linspace(minX, maxX, length(ofdm_signal)).*1e-3;
 
     axes(handles.ofdmWaveAxes4);
-    sigSpecNoisy = 20*log10(abs(fft(ofdm_signal_noisy, 512))./512);
+    sigSpecNoisy = 20*log10(abs(fft(ofdm_signal_noisy))./length(ofdm_signal_noisy));
     plot(xAxis, fftshift(sigSpecNoisy));
 
     ylim([floor(min(sigSpecNoisy)/10)*10 ceil(max(sigSpecNoisy)/10)*10]);
     xlim([xAxis(1) xAxis(end)]);
 
-    hold on;
-    plot(xAxis,fftshift(sigSpec), '--r')
-    hold off;
+% PLOT ORIGINAL SIGNAL WITHOUT ANY NOISE    
+%     hold on;
+%     plot(xAxis,fftshift(sigSpec), '--r')
+%     hold off;
     if (useChannelModel == 0)
         title('Bandwidth signal spectrum'); xlabel('f[kHz]'); ylabel('A[dBm]');
     elseif (useChannelModel == 1)
         title('Signal after AWGN channel'); xlabel('f[kHz]'); ylabel('A[dBm]');
-    elseif (useChannelModel == 2)
-        title('Signal after rayleigh channel'); xlabel('f[Hz]'); ylabel('A[dBm]');
     else
         axes(handles.ofdmWaveAxes4);
         plot([]);
@@ -729,15 +768,6 @@ while (cyclicGeneration == 1)
                 'Total channel energy ', ...
                 num2str(ofdm_signal_energy_noisy),'dBm.' ...
             ));
-    elseif (useChannelModel == 2)   % rayleigh kanal parametre vypis
-        set(handles.statusText, 'String', ...
-            horzcat(    ...
-                'USRP generating samples. Using rayleigh channel. ', ...
-                'Signal energy ', ...
-                num2str(ofdm_signal_energy),'dBm.', ...
-                'Total channel energy ', ...
-                num2str(ofdm_signal_energy_noisy),'dBm.' ...
-            ));
     else
     end
 end     %koniec modulovania
@@ -753,32 +783,6 @@ if (enablePackets == 1)
     release(packetHeadMod);
 end
 release(payloadMod);
-handles.data.seqData = data_source; %for LW410 output
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%       KONIEC GENEROVANIA
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-%
-%   For DEBUGGING only!
-%
-% dlmwrite('OFDMOutputSignal.mat',ofdm_signal_noisy); %EXCEEDING 100 000 samples complex numbers!!!
-% dlmwrite('benchmark.mat',benchmark,';');    %zapis do suboru
-handles.benchmark = benchmark;
-
-% 
-% % PLOT - OFDM Phase spectrum
-% phaseSpec = 180/pi*angle(fft(real(ofdm_signal), 2048));
-% length(phaseSpec)
-% axes(handles.ofdmWaveAxes4);
-% plot(xAxis, phaseSpec);
-% title('OFDM phase spectrum'); xlabel('f[kHz]'); ylabel('A[deg]');
-
-axes(handles.benchmarkAxes);
-plot(benchmark(5:end));
-%title('Generating cycle run time (s)');
-xlabel('cycle [-]'); ylabel('t[s]');
-grid on;
 
 guidata(hObject, handles);
 
@@ -942,9 +946,15 @@ elseif (get(handles.dataInputUserRadio, 'Value') == 1) handles.ofdm.dataInputMet
 elseif (get(handles.dataInputFileRadio, 'Value') == 1)
     handles.ofdm.dataInputMethod = 'file';
     [fileName,path] = uigetfile('*','Select file with samples');
-    handles.ofdm.file = horzcat(path, fileName);
-    set(handles.seqFileInput, 'string', horzcat(path, fileName));
-    set(handles.statusText, 'string', horzcat('Data input from file ', path, fileName));
+    if (fileName ~= 0)
+        handles.ofdm.file = horzcat(path, fileName);
+        set(handles.seqFileInput, 'string', horzcat(path, fileName));
+        set(handles.statusText, 'string', horzcat('Data input from file ', path, fileName));
+    else
+        set(handles.dataInputRandomRadio, 'Value', 1);
+        handles.ofdm.dataInputMethod =  'randsrc';
+        msgbox('File hasn''t been choosed, input changed to random sequence.','Error!');        
+    end
 end
 
 disp(horzcat('Data input method changed to ', handles.ofdm.dataInputMethod));
@@ -956,13 +966,14 @@ function butExportOFDMData_Callback(hObject, eventdata, handles)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 hChildren = get(handles.ofdmWaveAxes,'Children');
-sigReal = get(hChildren(2),'YData');
-sigImag = get(hChildren(1),'YData');
+sigReal = get(hChildren(1),'YData');
 
-[filePath dir] = uiputfile('txt', 'Choose output file');
-f = fopen(horzcat(dir,filePath),'w');
-fwrite(f, repmat([sigReal; sigImag],1,2*length(sigReal)), 'float32');
-fclose(f);
+[filePath dir] = uiputfile('*.*', 'Choose output file');
+if (exist('filepath'))
+    f = fopen(horzcat(dir,filePath),'w');
+    fwrite(f, sigReal, 'float32');
+    fclose(f);
+end
 
 guidata(hObject, handles);
 
@@ -1019,6 +1030,18 @@ function prefixLengthInput_Callback(hObject, eventdata, handles)
 
 % Hints: get(hObject,'String') returns contents of prefixLengthInput as text
 %        str2double(get(hObject,'String')) returns contents of prefixLengthInput as a double
+ifftLen = get(handles.ifftLen,'String');
+cpLen = get(handles.prefixLengthInput,'String');
+try
+    cpLen = eval(cpLen);
+catch ME
+    msgbox('Cyclic prefix is not number! Changed to 8','Error!');
+    set(handles.prefixLengthInput,'String','8');
+end
+if (cpLen > ifftLen)
+    msgbox(['Cyclic prefix must be smaller than ifft length! Changed to ' ifftLen],'Error!');
+    set(handles.prefixLengthInput,'String',ifftLen);
+end
 
 
 % --- Executes during object creation, after setting all properties.
@@ -1161,7 +1184,23 @@ function seqInput_Callback(hObject, eventdata, handles)
 
 % Hints: get(hObject,'String') returns contents of seqInput as text
 %        str2double(get(hObject,'String')) returns contents of seqInput as a double
-
+enablePackets = get(handles.enablePackets, 'Value');
+seqInput = get(handles.seqInput,'String');
+if (enablePackets)
+    try
+        seqInput = eval(seqInput);
+    catch ME
+        msgbox('Input sequence is not string, changed to ''Hello world!''','Error!');
+        set(handles.seqInput,'String','''Hello world!''');
+    end
+else
+    try
+        seqInput = eval(seqInput);
+    catch ME
+        msgbox('Input sequence is not array, changed to default []','Error!');
+        set(handles.seqInput,'String','[]');
+    end
+end
 
 % --- Executes during object creation, after setting all properties.
 function seqInput_CreateFcn(hObject, eventdata, handles)
@@ -1195,21 +1234,6 @@ h = figure('Tag','time_zoom','Name','OFDM phase spectrum','Position',[scrsz(3)/2
 newaxes = copyobj(handles.ofdmWaveAxes4, h);
 set(newaxes,'Units','normalized','ActivePositionProperty','position','Position',[0.1 0.1 0.85 0.85]);
 
-
-% --- Executes on button press in showConstellationBut.
-function showConstellationBut_Callback(hObject, eventdata, handles)
-% hObject    handle to showConstellationBut (see GCBO)
-% eventdata  reserved - to be defined in a future version of MATLAB
-% handles    structure with handles and user data (see GUIDATA)
-hChildren = get(handles.ofdmWaveAxes,'Children');
-sigReal = get(hChildren(2),'YData');
-sigImag = get(hChildren(1),'YData');
-
-handles.payloadMod.constellation;
-hold on;
-plot(sigReal, sigImag);
-hold off;
-
 function awgnLevel_Callback(hObject, eventdata, handles)
 % hObject    handle to awgnLevel (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
@@ -1229,17 +1253,6 @@ function awgnLevel_CreateFcn(hObject, eventdata, handles)
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
     set(hObject,'BackgroundColor','white');
 end
-
-
-% --- Executes on button press in benchmarkButton.
-function benchmarkButton_Callback(hObject, eventdata, handles)
-% hObject    handle to benchmarkButton (see GCBO)
-% eventdata  reserved - to be defined in a future version of MATLAB
-% handles    structure with handles and user data (see GUIDATA)
-scrsz = get(0,'ScreenSize');
-h = figure('Tag','Benchmark','Name','OFDM signal','Position',[scrsz(3)/2-500 scrsz(4)/2-250 1000 500]);
-plot(handles.benchmark(2:end));
-
 
 
 function editSignalAmplitude_Callback(hObject, eventdata, handles)
@@ -1341,6 +1354,16 @@ function pilotTonesPositions_Callback(hObject, eventdata, handles)
 
 % Hints: get(hObject,'String') returns contents of pilotTonesPositions as text
 %        str2double(get(hObject,'String')) returns contents of pilotTonesPositions as a double
+carriers = eval(get(handles.occupiedCarriers, 'String'));
+pilotTonesPositions = get(handles.pilotTonesPositions, 'String');
+try
+    pilotTonesPositions = eval(pilotTonesPositions);
+catch ME
+    msgbox('Subcarriers mapping doesn''t contain array!','Error!');
+end
+if (sum(ismember(pilotTonesPositions, carriers)))
+    msgbox('There is pilot tone at subcarrier position!','Error!');
+end
 
 
 % --- Executes during object creation, after setting all properties.
@@ -1364,7 +1387,12 @@ function pilotSymbols_Callback(hObject, eventdata, handles)
 
 % Hints: get(hObject,'String') returns contents of pilotSymbols as text
 %        str2double(get(hObject,'String')) returns contents of pilotSymbols as a double
-
+pilotTonesAmplitudes = get(handles.pilotSymbols, 'String');
+try
+    pilotTonesAmplitudes = eval(pilotTonesAmplitudes);
+catch ME
+    msgbox('Pilot tones amplitudes is not array!','Error!');
+end
 
 % --- Executes during object creation, after setting all properties.
 function pilotSymbols_CreateFcn(hObject, eventdata, handles)
@@ -1497,7 +1525,10 @@ set(handles.lw410SampleRate,'String', paramsToRead{34})
 set(handles.lw410SampleRate,'String', paramsToRead{35}) 
 %     gpib_addr  
 %     sampleFreq 
-set(handles.cyclicGeneration,'Value', str2num(paramsToRead{38}))
+% set(handles.cyclicGeneration,'Value', str2num(paramsToRead{38}))
+
+% change deviceOutputImg
+connectedDeviceGroup_SelectionChangedFcn(hObject, eventdata, handles)
 
 guidata(hObject, handles);
 
@@ -1545,15 +1576,6 @@ function subcarriersAmpl_CreateFcn(hObject, eventdata, handles)
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
     set(hObject,'BackgroundColor','white');
 end
-
-
-% --- Executes on button press in benchmarkButton.
-function pushbutton19_Callback(hObject, eventdata, handles)
-% hObject    handle to benchmarkButton (see GCBO)
-% eventdata  reserved - to be defined in a future version of MATLAB
-% handles    structure with handles and user data (see GUIDATA)
-
-
 
 function edit24_Callback(hObject, eventdata, handles)
 % hObject    handle to editUsrpInterp (see GCBO)
@@ -1822,7 +1844,24 @@ function occupiedCarriers_Callback(hObject, eventdata, handles)
 
 % Hints: get(hObject,'String') returns contents of occupiedCarriers as text
 %        str2double(get(hObject,'String')) returns contents of occupiedCarriers as a double
+ifftLen = str2num(get(handles.ifftLen, 'String'));
+carriers = get(handles.occupiedCarriers, 'String');
+pilotTonesPositions = eval(get(handles.pilotTonesPositions, 'String'));
+try
+    carriers = eval(carriers);
+catch ME
+    msgbox('Subcarriers mapping doesn''t contain array!','Error!');
+end
+if (sum(ismember(pilotTonesPositions, carriers)))
+    msgbox('There is pilot tone at subcarrier position!','Error!');
+end
+if (~isempty(carriers))
+    if ((max(carriers) > ifftLen/2-1) || (min(carriers) < -ifftLen/2))
+        msgbox('Allocated carriers values should be inside <-ifftLen/2, ifftLen/2-1) interval.','Error!');
+    end
+end
 
+changeHintsText(hObject, eventdata, handles);
 
 % --- Executes during object creation, after setting all properties.
 function occupiedCarriers_CreateFcn(hObject, eventdata, handles)
@@ -2110,12 +2149,16 @@ function pushbutton26_Callback(hObject, eventdata, handles)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 fs = str2double(get(handles.noDeviceSampleRate, 'string'))*1000;
+fc = 7000;
 if (get(handles.usrpDevice, 'Value') == 1)
-    fs = str2double(get(handles.USRPSampleRate, 'string'))*1000;
+    oversampling = str2double(get(handles.oversamplingInput, 'string'));
+    fs = str2double(get(handles.USRPSampleRate, 'string'))*1000/oversampling;
+    fc = str2double(get(handles.carrierFreqInput, 'string'))*1000/oversampling;
     deviceType = 1;
 end;
 if (get(handles.lw410Device, 'Value') == 1)
-    fs = handles.lw410.fs;
+    fs = str2double(get(handles.lw410SampleRate, 'string'))*1000;
+    fc = str2double(get(handles.lw410carrier, 'string'))*1000;
     deviceType = 2;
 end;
 
@@ -2136,6 +2179,7 @@ packetHeadModType = packetHeadModTypeList(get(handles.packetHeadModType, 'Value'
 txTemplate = regexp( fileread('templates/OFDM_Receiver.grc'),'\n','split');
 
 txTemplate{567} = ['<value>' num2str(fs) '</value>'];
+txTemplate{108} = ['<value>' num2str(fc) '</value>'];
 txTemplate{216} = ['<value>' num2str(cpLen) '</value>'];
 
 tsync1 = '<value>(';
@@ -2200,9 +2244,11 @@ txTemplate{762} = ['<value>"' packetHeadModType '"</value>'];
 txTemplate{790} = ['<value>"' payloadModType '"</value>'];
 
 [fileName,path] = uiputfile('*','Select file to save debug TCVR');
-f = fopen(horzcat(path,fileName),'w');
-fprintf(f,'%s\n',txTemplate{:});
-fclose(f);
+if (fileName ~= 0)
+    f = fopen(horzcat(path,fileName),'w');
+    fprintf(f,'%s\n',txTemplate{:});
+    fclose(f);
+end
 
 
 % --- Executes on key press with focus on butSetOutput and none of its controls.
@@ -2480,7 +2526,7 @@ if (handles.langENG)
     set(handles.subcarriersMapping ,'Title','Mapovani subnosnych a pilotnich tonu');
     set(handles.packetPanel ,'Title','Nastaveni paketu');
     set(handles.chanelParamsGroup ,'Title','Nastaveni kanalu');
-    set(handles.hintsPanel ,'Title','N�ov?da');
+    set(handles.hintsPanel ,'Title','Napoveda');
     set(handles.deviceSettingsPanel ,'Title','Nastaveni vystupniho zarizeni');
     set(handles.connectedDeviceGroup ,'Title','pripojene zarizeni');
     set(handles.noDeviceSettings ,'Title','Nastaveni bez zarizeni');
@@ -2498,10 +2544,10 @@ if (handles.langENG)
     set(handles.prefixLengthText ,'String','Delka prefixu');
     set(handles.guardRadio ,'String','Ochranny interval');
     set(handles.guardIntervalText ,'String','Ochranny int. [vlevo vpravo]');
-    set(handles.intervalNotusedRadio ,'String','Napoveda');
+    set(handles.intervalNotusedRadio ,'String','Nepouzit');
     set(handles.subcarrierMappingText ,'String','Mapovani subnosnych');
     set(handles.pilotPositionsText ,'String','Pozice pilotnich tonu');
-    set(handles.pilotAmplitudesText ,'String','Pilotni symboly amplituda');
+    set(handles.pilotAmplitudesText ,'String','Amplituda pilotnich tonu');
     set(handles.packetHeadModText ,'String','Modulace hlavicek paketu');
     set(handles.packetLenText ,'String','Velikost paketu (byte)');
     set(handles.enablePackets ,'String','pouzit pakety');
@@ -2513,13 +2559,15 @@ if (handles.langENG)
     set(handles.noDevice ,'String','bez zarizeni');
     set(handles.sampleRateText ,'String','Vzorkovaci kmitocet (kHz)');
     set(handles.noDeviceOversamplingText ,'String','Prevzorkovani');
-    set(handles.oversampleText ,'String','Prevzorkovani');
+    set(handles.usrpSampleRateText ,'String','Vzorkovaci kmitocet (kHz)');
     set(handles.txCycleCountText ,'String','Pocet opakovani');
     set(handles.txGainText ,'String','TX zisk');
     set(handles.lw410SampleRateText ,'String','Vzork. kmitocet (kHz)');
     set(handles.gpibAddrLabel,'String','GPIB adresa');
     set(handles.sampleFreqLabel ,'String','Vzorkovaci frekvence');
-    set(handles.carrierFreqText ,'String','Vysilaci kmitocet [kHz]');
+    set(handles.carrierFreqText ,'String','Kmitocet nosne (kHz)');
+    set(handles.usrpOversamplingText ,'String','Prevzorkovani');    
+    set(handles.lw410carrierText ,'String','Kmitocet nosne (kHz)');
 else
     handles.langENG = 1;
     set(handles.dataInputGroup ,'Title','Data Input');
@@ -2561,13 +2609,15 @@ else
     set(handles.noDevice ,'String','no device');
     set(handles.sampleRateText ,'String','Sample rate (kHz)');
     set(handles.noDeviceOversamplingText ,'String','Oversampling');
-    set(handles.oversampleText ,'String','Oversampling');
+    set(handles.usrpSampleRateText ,'String','Sample rate(kHz)');
+    set(handles.usrpOversamplingText ,'String','Oversampling');    
     set(handles.txCycleCountText ,'String','Tx cycle count');
     set(handles.txGainText ,'String','TX gain');
     set(handles.lw410SampleRateText ,'String','Sample Rate (kHz)');
     set(handles.gpibAddrLabel,'String','GPIB addres');
     set(handles.sampleFreqLabel ,'String','Sample freq.');
-    set(handles.carrierFreqText ,'String','Carrier freq. [kHz]');
+    set(handles.carrierFreqText ,'String','Carrier freq. (kHz)');
+    set(handles.lw410carrierText ,'String','Carrier freq. (kHz)');
 end
 guidata(hObject, handles);
 
@@ -2752,3 +2802,39 @@ function lw410carrier_CreateFcn(hObject, eventdata, handles)
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
     set(hObject,'BackgroundColor','white');
 end
+
+
+% --- Executes when selected object is changed in connectedDeviceGroup.
+function connectedDeviceGroup_SelectionChangedFcn(hObject, eventdata, handles)
+% hObject    handle to the selected object in connectedDeviceGroup 
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+axes(handles.outputDeviceImg);
+if (get(handles.usrpDevice, 'Value') == 1)
+    set(handles.outputDeviceImg,'Visible','on');
+    image(handles.usrpDeviceImg);
+    set(handles.outputDeviceImg,'Visible','off');
+elseif (get(handles.lw410Device, 'Value') == 1)
+    set(handles.outputDeviceImg,'Visible','on');
+    image(handles.lw410Img);
+    set(handles.outputDeviceImg,'Visible','off');
+elseif (get(handles.noDevice, 'Value') == 1)
+    set(handles.outputDeviceImg,'Visible','off');
+    set(get(handles.outputDeviceImg,'children'),'visible','off')
+end
+
+% --- Executes on button press in lw410Device.
+function usrpDevice_Callback(hObject, eventdata, handles)
+% hObject    handle to lw410Device (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hint: get(hObject,'Value') returns toggle state of lw410Device
+
+% --- Executes on button press in lw410Device.
+function lw410Device_Callback(hObject, eventdata, handles)
+% hObject    handle to lw410Device (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hint: get(hObject,'Value') returns toggle state of lw410Device
