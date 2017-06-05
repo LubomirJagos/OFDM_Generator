@@ -2141,11 +2141,11 @@ function pushbutton26_Callback(hObject, eventdata, handles)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 fs = str2double(get(handles.noDeviceSampleRate, 'string'))*1000;
-fc = 7000;
+fc = 7000000;
 if (get(handles.usrpDevice, 'Value') == 1)
     oversampling = str2double(get(handles.oversamplingInput, 'string'));
     fs = str2double(get(handles.USRPSampleRate, 'string'))*1000/oversampling;
-    fc = str2double(get(handles.carrierFreqInput, 'string'))*1000/oversampling;
+    fc = str2double(get(handles.carrierFreqInput, 'string'))*1000;
     deviceType = 1;
 end;
 if (get(handles.lw410Device, 'Value') == 1)
@@ -2276,12 +2276,18 @@ function pushbutton28_Callback(hObject, eventdata, handles)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 fs = str2double(get(handles.noDeviceSampleRate, 'string'))*1000;
+fc = 7000000;
+txGain = 0;
 if (get(handles.usrpDevice, 'Value') == 1)
-    fs = str2double(get(handles.USRPSampleRate, 'string'))*1000;
+    oversampling = str2double(get(handles.oversamplingInput, 'string'));
+    fs = str2double(get(handles.USRPSampleRate, 'string'))*1000/oversampling;
+    fc = str2double(get(handles.carrierFreqInput, 'string'))*1000;
+    txGain = str2double(get(handles.txGain, 'string'));
     deviceType = 1;
 end;
 if (get(handles.lw410Device, 'Value') == 1)
-    fs = handles.lw410.fs;
+    fs = str2double(get(handles.lw410SampleRate, 'string'))*1000;
+    fc = str2double(get(handles.lw410carrier, 'string'))*1000;
     deviceType = 2;
 end;
 
@@ -2302,6 +2308,8 @@ packetHeadModType = packetHeadModTypeList(get(handles.packetHeadModType, 'Value'
 txTemplate = regexp( fileread('templates/OFDM_Transmitter.grc'),'\n','split');
 
 txTemplate{567} = ['<value>' num2str(fs) '</value>'];
+txTemplate{108} = ['<value>' num2str(fc) '</value>'];
+txTemplate{189} = ['<value>' num2str(txGain) '</value>'];
 txTemplate{216} = ['<value>' num2str(cpLen) '</value>'];
 
 tsync1 = '<value>(';
@@ -2407,13 +2415,15 @@ function genLoopbackBut_Callback(hObject, eventdata, handles)
 % hObject    handle to genLoopbackBut (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
-fs = str2double(get(handles.noDeviceSampleRate, 'string'))*1000;
+oversampling = str2double(get(handles.noDeviceOversamplingInput, 'string'));
+fs = str2double(get(handles.noDeviceSampleRate, 'string'))*1000/oversampling;
 if (get(handles.usrpDevice, 'Value') == 1)
-    fs = str2double(get(handles.USRPSampleRate, 'string'))*1000;
+    oversampling = str2double(get(handles.oversamplingInput, 'string'));
+    fs = str2double(get(handles.USRPSampleRate, 'string'))*1000/oversampling;
     deviceType = 1;
 end;
 if (get(handles.lw410Device, 'Value') == 1)
-    fs = handles.lw410.fs;
+    fs = str2double(get(handles.lw410SampleRate, 'string'))*1000;
     deviceType = 2;
 end;
 
